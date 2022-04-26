@@ -18,13 +18,14 @@ jobs:
 
       - name: 'Build'
         run: |
-          cargo build --profile release-small --target-dir target
+          cargo build --profile release-small
+          cargo install --profile release-small --path . --root artifacts
 
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v2
         with:
           name: sup3_win-x86-64
-          path: target/release-small/sup3
+          path: artifacts/bin/sup3*
 
   ubuntu:
     runs-on: ubuntu-latest
@@ -39,13 +40,14 @@ jobs:
 
       - name: 'Build'
         run: |
-          cargo build --profile release-small --target-dir target
+          cargo build --profile release-small
+          cargo install --profile release-small --path . --root artifacts
 
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v2
         with:
           name: sup3_ubuntu-latest-x86-64
-          path: target/release-small/sup3
+          path: artifacts/bin/sup3
 
   macos:
     runs-on: macos-latest
@@ -60,11 +62,12 @@ jobs:
 
       - name: 'Build'
         run: |
-          cargo build --profile release-small --target-dir target
+          cargo build --profile release-small
+          cargo install --profile release-small --path . --root artifacts
 
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v2
         with:
           name: sup3_macos-latest-x86-64
-          path: target/release-small/sup3
+          path: artifacts/bin/sup3
 
