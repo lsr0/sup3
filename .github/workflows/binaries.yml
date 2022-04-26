@@ -89,7 +89,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v3
-        path: job_artifacts
+        with:
+          path: job_artifacts
 
       - name: Generate Release Files
         run: |
