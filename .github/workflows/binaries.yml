@@ -16,14 +16,14 @@ jobs:
       - name: 'Install Rust Stable'
         uses: actions-rs/toolchain@v1
         with:
-            toolchain: stable
+          toolchain: stable
 
       - name: 'Build'
-         run: |
-           cargo build --profile release-small
+        run: |
+          cargo build --profile release-small
 
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v2
         with:
-            name: sup3_win-x86-64
-            path: target/release-small/sup3
+          name: sup3_win-x86-64
+          path: target/release-small/sup3
