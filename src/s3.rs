@@ -182,8 +182,8 @@ fn key_matches_requested(requested: &str, key: &str, args: &ListArguments) -> bo
 }
 
 fn is_requested_path_directory(response: &ListObjectsV2Output, requested_path: &str) -> bool {
-    let files = response.contents.iter().map(|c| c.iter()).flatten();
-    for name in files.clone().flat_map(|f| f.key.as_ref()) {
+    let files = response.contents.iter().flatten();
+    for name in files.flat_map(|f| f.key.as_ref()) {
         if name.strip_prefix(requested_path).unwrap_or("").starts_with('/') {
             return true;
         }
@@ -227,35 +227,31 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, pre
         }
     };
 
-    if let Some(directories) = &response.common_prefixes {
-        for dir in directories {
-            if let Some(name) = &dir.prefix {
-                print_directory(name);
-            }
+    for dir in response.common_prefixes().unwrap_or_default() {
+        if let Some(name) = &dir.prefix {
+            print_directory(name);
         }
     }
 
-    if let Some(files) = &response.contents {
-        for file in files {
-            if let Some(name) = &file.key {
-                if !key_matches_requested(prefix, name, args) {
-                    continue;
+    for file in response.contents().unwrap_or_default() {
+        if let Some(name) = &file.key {
+            if !key_matches_requested(prefix, name, args) {
+                continue;
+            }
+            if args.recurse {
+                let dir_path = basename(name);
+                if (dir_path != prefix) && seen_directories.insert(dir_path) {
+                    print_directory(dir_path);
                 }
-                if args.recurse {
-                    let dir_path = basename(name);
-                    if (dir_path != prefix) && seen_directories.insert(dir_path) {
-                        print_directory(dir_path);
-                    }
-                }
-                let name = printable_filename(name);
-                if args.long {
-                    let date = file.last_modified()
-                        .and_then(|d| d.fmt(aws_smithy_types::date_time::Format::DateTime).ok())
-                        .unwrap_or("".to_owned());
-                    println!("{:size_width$} {date:DATE_LEN$} {name}", file.size());
-                } else {
-                    println!("{name}");
-                }
+            }
+            let name = printable_filename(name);
+            if args.long {
+                let date = file.last_modified()
+                    .and_then(|d| d.fmt(aws_smithy_types::date_time::Format::DateTime).ok())
+                    .unwrap_or("".to_owned());
+                println!("{:size_width$} {date:DATE_LEN$} {name}", file.size());
+            } else {
+                println!("{name}");
             }
         }
     }
