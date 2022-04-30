@@ -7,10 +7,6 @@ on:
 jobs:
   windows:
     runs-on: windows-latest
-    env:
-      ARTIFACT_NAME: 'sup3-${ runner.os }-${ runner.arch }'
-    outputs:
-      artifact_name: '${ env.ARTIFACT_NAME }'
     steps:
       - name: 'Checkout'
         uses: actions/checkout@v2
@@ -28,15 +24,11 @@ jobs:
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v2
         with:
-          name: '${ env.ARTIFACT_NAME }'
+          name: sup3-${ runner.os }-${ runner.arch }
           path: artifacts/bin/sup3*
 
   ubuntu:
     runs-on: ubuntu-latest
-    env:
-      ARTIFACT_NAME: 'sup3-${ runner.os }-${ runner.arch }'
-    outputs:
-      artifact_name: '${ env.ARTIFACT_NAME }'
     steps:
       - name: 'Checkout'
         uses: actions/checkout@v2
@@ -54,15 +46,11 @@ jobs:
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v2
         with:
-          name: '${ env.ARTIFACT_NAME }'
+          name: sup3-${ runner.os }-${ runner.arch }
           path: artifacts/bin/sup3
 
   macos:
     runs-on: macos-latest
-    env:
-      ARTIFACT_NAME: 'sup3-${ runner.os }-${ runner.arch }'
-    outputs:
-      artifact_name: '${ env.ARTIFACT_NAME }'
     steps:
       - name: 'Checkout'
         uses: actions/checkout@v2
@@ -80,7 +68,7 @@ jobs:
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v2
         with:
-          name: '${ env.ARTIFACT_NAME }'
+          name: sup3-${ runner.os }-${ runner.arch }
           path: artifacts/bin/sup3
 
   release:
