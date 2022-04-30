@@ -86,7 +86,7 @@ jobs:
           chmod +x -R job_artifacts/*/sup3
           tar cfz release/macos-x64_64-$GITHUB_REF_NAME.tar.gz -C job_artifacts/sup3-macOS-X64 sup3
           tar cfz release/linux-x64_64-$GITHUB_REF_NAME.tar.gz -C job_artifacts/sup3-Linux-X64 sup3
-          zip release/windows-x64_64-$GITHUB_REF_NAME.exe job_artifacts/sup3-Windows-X64/sup3.exe --junk-paths
+          zip release/windows-x64_64-$GITHUB_REF_NAME.zip job_artifacts/sup3-Windows-X64/sup3.exe --junk-paths
           echo "::set-output name=release_files::$(find release -type f)"
 
       - name: Release
