@@ -30,7 +30,7 @@ impl std::str::FromStr for Uri {
         };
         Ok(Uri {
             bucket: bucket.to_string(),
-            key: parsed.path().to_string(),
+            key: parsed.path().strip_prefix('/').expect("URL separator must be /").to_string(),
         })
     }
 }

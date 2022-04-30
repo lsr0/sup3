@@ -22,6 +22,7 @@ Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/aw
 ## Commands
 * Upload (`upload`) (`1..N` local files to S3 remote)
 * Remove (`rm`) (a single S3 URI)
+* List (`ls`) (`1..N` S3 URIs)
 
 ## TODO
 * Directory upload support

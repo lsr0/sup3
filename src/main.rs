@@ -26,6 +26,8 @@ enum Commands {
     ///
     /// Note: will succeed if remote file doesn't exist
     Rm(Remove),
+    /// List S3 path
+    Ls(ListFiles),
 }
 
 #[derive(Args, Debug)]
@@ -40,6 +42,15 @@ struct Upload {
 struct Remove {
     /// S3 URI in s3://bucket/path/components format
     remote_path: s3::Uri,
+}
+
+#[derive(Args, Debug)]
+struct ListFiles {
+    /// S3 URIs in s3://bucket/path/components format
+    #[clap(required = true)]
+    remote_paths: Vec<s3::Uri>,
+    #[clap(flatten)]
+    command_args: s3::ListArguments,
 }
 
 impl Upload {
@@ -68,6 +79,20 @@ impl Remove {
     }
 }
 
+impl ListFiles {
+    async fn run(&self, client: &s3::Client, opts: &SharedOptions) {
+        for uri in &self.remote_paths {
+            match client.ls(opts, &self.command_args, uri).await {
+                Ok(()) => {},
+                Err(e) => {
+                    eprintln!("failed to list {:?}: {e}", uri);
+                    std::process::exit(1);
+                },
+            }
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let args = Arguments::parse();
@@ -77,6 +102,7 @@ async fn main() {
     match &args.command {
         Commands::Upload(upload) => upload.run(&client, &args.shared).await,
         Commands::Rm(remove) => remove.run(&client, &args.shared).await,
+        Commands::Ls(list) => list.run(&client, &args.shared).await,
     }
 }
 
