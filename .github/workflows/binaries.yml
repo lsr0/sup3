@@ -24,7 +24,7 @@ jobs:
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v2
         with:
-          name: sup3-${ runner.os }-${ runner.arch }
+          name: sup3-${{ runner.os }}-${{ runner.arch }}
           path: artifacts/bin/sup3*
 
   ubuntu:
@@ -46,7 +46,7 @@ jobs:
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v2
         with:
-          name: sup3-${ runner.os }-${ runner.arch }
+          name: sup3-${{ runner.os }}-${{ runner.arch }}
           path: artifacts/bin/sup3
 
   macos:
@@ -68,7 +68,7 @@ jobs:
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v2
         with:
-          name: sup3-${ runner.os }-${ runner.arch }
+          name: sup3-${{ runner.os }}-${{ runner.arch }}
           path: artifacts/bin/sup3
 
   release:
