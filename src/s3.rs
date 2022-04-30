@@ -27,17 +27,11 @@ pub async fn init(region: Option<String>) -> Client {
 
 #[derive (thiserror::Error, Debug)]
 pub enum Error {
-    #[error("S3: {}", .source)]
-    S3 {
-        #[from]
-        source: aws_sdk_s3::Error,
-    },
-    #[error("S3 put error: {}", .source)]
-    Put {
-        #[from]
-        source: aws_sdk_s3::error::PutObjectError,
-    },
-    #[error("accessing local file: {}", .0)]
+    #[error("S3: {0}")]
+    S3(#[from] aws_sdk_s3::Error),
+    #[error("S3 put error: {0}")]
+    Put(#[from] aws_sdk_s3::error::PutObjectError),
+    #[error("accessing local file: {0}")]
     File(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error("no filename specified")]
     NoFilename,
