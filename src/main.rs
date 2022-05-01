@@ -2,6 +2,7 @@ mod s3;
 mod shared_options;
 
 use clap::{Parser, Subcommand, Args};
+use futures::{stream, future};
 
 use shared_options::SharedOptions;
 
@@ -36,6 +37,12 @@ struct Upload {
     paths: Vec<std::path::PathBuf>,
     /// S3 URI in s3://bucket/path/components format
     to: s3::Uri,
+    /// Perform multiple uploads concurrently, will continue over errors
+    #[clap(long, short='j', parse(try_from_str=flag_concurrency_in_range))]
+    concurrency: Option<u16>,
+    /// Continue to next file on error
+    #[clap(long, short='y')]
+    continue_on_error: bool,
 }
 
 #[derive(Args, Debug)]
@@ -53,28 +60,67 @@ struct ListFiles {
     command_args: s3::ListArguments,
 }
 
+fn flag_concurrency_in_range(s: &str) -> Result<u16, String> {
+    match s.parse() {
+        Ok(val) if val > 0 => Ok(val),
+        Ok(_) => Err("concurrency not at least 1".to_owned()),
+        Err(e) => Err(format!("{e}")),
+    }
+}
+
+use stream::futures_unordered::FuturesUnordered;
+use stream::StreamExt;
+use future::TryFutureExt;
+
 impl Upload {
     async fn run(&self, client: &s3::Client, opts: &SharedOptions) {
-        for path in &self.paths {
-            match client.put(opts, path, &self.to).await {
-                Ok(()) => {},
-                Err(e) => {
-                    eprintln!("failed to upload {path:?}: {e}");
-                    std::process::exit(1);
-                },
+        let mut error_count = 0;
+        let mut report_error = |path: &std::path::Path, e| {
+            eprintln!("❌ failed to upload {path:?}: {e}");
+            error_count += 1;
+        };
+
+        let concurrency = self.concurrency.unwrap_or(1);
+
+        let report_success = |uri: &String| {
+            if opts.verbose && concurrency > 0 {
+                println!("✅ uploaded {uri}");
             }
+        };
+
+        let mut started_futures = FuturesUnordered::new();
+        for path in &self.paths {
+            let fut = client.put(opts, path, &self.to)
+                .map_err(|e| (e, path.clone()))
+                .inspect_ok(report_success);
+            started_futures.push(fut);
+
+            if started_futures.len() >= concurrency.into() {
+                if let Err((e, path)) = started_futures.next().await.expect("at least one future") {
+                    report_error(&path, e);
+                    if !self.continue_on_error {
+                        break;
+                    }
+                }
+            }
+        }
+        while let Some(res) = started_futures.next().await {
+            if let Err((e, path)) = res {
+                report_error(&path, e);
+            }
+        }
+
+        if error_count > 0 {
+            std::process::exit(1);
         }
     }
 }
 
 impl Remove {
     async fn run(&self, client: &s3::Client, opts: &SharedOptions) {
-        match client.remove(opts, &self.remote_path).await {
-            Ok(()) => {},
-            Err(e) => {
-                eprintln!("failed to remove {:?}: {e}", self.remote_path);
-                std::process::exit(1);
-            },
+        if let Err(e) = client.remove(opts, &self.remote_path).await {
+            eprintln!("❌: failed to remove {:?}: {e}", self.remote_path);
+            std::process::exit(1);
         }
     }
 }
@@ -82,12 +128,9 @@ impl Remove {
 impl ListFiles {
     async fn run(&self, client: &s3::Client, opts: &SharedOptions) {
         for uri in &self.remote_paths {
-            match client.ls(opts, &self.command_args, uri).await {
-                Ok(()) => {},
-                Err(e) => {
-                    eprintln!("failed to list {:?}: {e}", uri);
-                    std::process::exit(1);
-                },
+            if let Err(e) = client.ls(opts, &self.command_args, uri).await {
+                eprintln!("❌: failed to list {:?}: {e}", uri);
+                std::process::exit(1);
             }
         }
     }

@@ -59,7 +59,7 @@ pub enum Error {
 }
 
 impl Client {
-    pub async fn put(&self, opts: &SharedOptions, path: &std::path::Path, s3_uri: &Uri) -> Result<(), Error> {
+    pub async fn put(&self, opts: &SharedOptions, path: &std::path::Path, s3_uri: &Uri) -> Result<String, Error> {
         let stream = ByteStream::from_path(path)
             .await
             .map_err(|e| Error::File(e.into()))?;
@@ -75,22 +75,22 @@ impl Client {
         let path_printable = path.to_string_lossy();
         if opts.verbose {
             match size_hint {
-                Some(size) => println!("uploading '{path_printable}' [{size} bytes] to s3://{}/{key}", s3_uri.bucket),
-                None => println!("uploading '{path_printable}' to s3://{}/{key}", s3_uri.bucket),
+                Some(size) => println!("🏁 uploading '{path_printable}' [{size} bytes] to s3://{}/{key}", s3_uri.bucket),
+                None => println!("🏁 uploading '{path_printable}' to s3://{}/{key}", s3_uri.bucket),
             };
         }
         self.client.put_object()
             .bucket(s3_uri.bucket.clone())
-            .key(key)
+            .key(key.clone())
             .body(stream)
             .send()
             .await
             .map_err(|e| -> aws_sdk_s3::Error { e.into() } )?;
-        Ok(())
+        Ok(format!("s3://{}/{}", s3_uri.bucket, key))
     }
     pub async fn remove(&self, opts: &SharedOptions, s3_uri: &Uri) -> Result<(), Error> {
         if opts.verbose {
-            println!("+ removing s3://{}/{}... ", s3_uri.bucket, s3_uri.key);
+            println!("🏁 removing s3://{}/{}... ", s3_uri.bucket, s3_uri.key);
         }
         self.client.put_object()
             .bucket(s3_uri.bucket.clone())
@@ -112,7 +112,7 @@ impl Client {
     }
     pub async fn ls(&self, opts: &SharedOptions, args: &ListArguments, s3_uri: &Uri) -> Result<(), Error> {
         if opts.verbose {
-            println!("+ listing s3://{}/{}... ", s3_uri.bucket, s3_uri.key);
+            println!("🏁 listing s3://{}/{}... ", s3_uri.bucket, s3_uri.key);
         }
         let separator = if args.recurse { None } else { Some('/') };
 

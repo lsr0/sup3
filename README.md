@@ -18,6 +18,7 @@ Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/aw
 * Upload resume on remote errors (provided by the SDK)
 * No startup delay
 * No runtime non-platform dependencies (e.g. `libc`, `libm`, `libgcc_s`)
+* Concurrent uploads
 
 ## Commands
 * Upload (`upload`) (`1..N` local files to S3 remote)
@@ -26,7 +27,6 @@ Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/aw
 
 ## TODO
 * Directory upload support
-* Concurrent uploads
 * Optional progress reporting
 * Support continuing to next file on error
 * Binary size reduction
