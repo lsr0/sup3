@@ -1,5 +1,6 @@
 mod s3;
 mod shared_options;
+mod cli;
 
 use clap::{Parser, Subcommand, Args};
 use futures::{stream, future};
@@ -43,6 +44,9 @@ struct Upload {
     /// Continue to next file on error
     #[clap(long, short='y')]
     continue_on_error: bool,
+
+    #[clap(flatten)]
+    progress: cli::ArgProgress,
 }
 
 #[derive(Args, Debug)]
@@ -75,22 +79,32 @@ use future::TryFutureExt;
 impl Upload {
     async fn run(&self, client: &s3::Client, opts: &SharedOptions) {
         let mut error_count = 0;
+        let concurrency = self.concurrency.unwrap_or(1);
+
+        let progress = cli::Output::new(&self.progress, self.paths.len());
+
         let mut report_error = |path: &std::path::Path, e| {
-            eprintln!("❌ failed to upload {path:?}: {e}");
+            if !progress.progress_enabled() {
+                progress.println_error(format_args!("failed to upload {path:?}: {e}"));
+            }
             error_count += 1;
         };
 
-        let concurrency = self.concurrency.unwrap_or(1);
-
         let report_success = |uri: &String| {
-            if opts.verbose && concurrency > 0 {
-                println!("✅ uploaded {uri}");
+            if opts.verbose && concurrency > 0 && !progress.progress_enabled() {
+                progress.println_done(format_args!("uploaded {uri}"));
             }
         };
 
+        let verbose = opts.verbose && !progress.progress_enabled();
+
         let mut started_futures = FuturesUnordered::new();
-        for path in &self.paths {
-            let fut = client.put(opts, path, &self.to)
+        for (i, path) in self.paths.iter().enumerate() {
+            let filename = path.file_name().as_ref().unwrap_or(&path.as_ref()).to_string_lossy().to_string();
+            let update_fn = progress.add(i, "initialising", filename);
+            let update_fn_for_error = update_fn.clone();
+            let fut = client.put(verbose, path, &self.to, update_fn)
+                .inspect_err(move |e| update_fn_for_error(cli::Update::Error(e.to_string())))
                 .map_err(|e| (e, path.clone()))
                 .inspect_ok(report_success);
             started_futures.push(fut);

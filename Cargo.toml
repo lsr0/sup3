@@ -1,22 +1,29 @@
 [package]
 name = "sup3"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Lindsay Roberts <os@lindsayr.com>"]
 license = "MIT"
 description = "A standalone S3 uploader"
 repository = "https://github.com/lsr0/sup3"
 
+[features]
+default = ["progress"]
+progress = ["dep:indicatif", "dep:console"]
+
 [dependencies]
-aws-config = "0.10"
-aws-sdk-s3 = "0.10"
-aws-types = "0.10"
-aws-smithy-types = "0.40"
+aws-config = "0.11"
+aws-sdk-s3 = "0.11"
+aws-types = "0.11"
+aws-smithy-types = "0.41"
+aws-smithy-http = "0.41"
 tokio = { "version" = "1", features = ["full"] }
 clap = { "version" = "3", features = ["std", "color", "suggestions", "derive", "cargo", "unicode"] }
 url = "2"
 thiserror = "1"
 futures = "0.3"
+indicatif = { version = "0.17.0-rc.10", optional = true }
+console = { version = "0.15", optional = true }
 
 [profile.release]
 opt-level = "s"

@@ -20,6 +20,7 @@ Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/aw
 * No startup delay
 * No runtime non-platform dependencies (e.g. `libc`, `libm`, `libgcc_s`)
 * Concurrent uploads
+* Optional progress reporting
 
 
 ## Commands
@@ -30,7 +31,6 @@ Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/aw
 
 ## TODO
 * Directory upload support
-* Optional progress reporting
 * Support continuing to next file on error
 * Binary size reduction
 * More commands

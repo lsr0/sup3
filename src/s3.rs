@@ -4,6 +4,7 @@ use aws_sdk_s3::{types::ByteStream, output::ListObjectsV2Output};
 use futures::stream::Stream;
 
 use crate::shared_options::SharedOptions;
+use crate::cli;
 
 mod uri;
 
@@ -52,19 +53,42 @@ pub enum Error {
     Put(#[from] aws_sdk_s3::error::PutObjectError),
     #[error("accessing local file: {0}")]
     File(Box<dyn std::error::Error + Send + Sync + 'static>),
-    #[error("no filename specified")]
+    #[error("no filename in either source or destination")]
     NoFilename,
     #[error("specified local filename not unicode")]
     LocalFilenameNotUnicode,
 }
 
+#[derive(Clone)]
+struct ProgressCallback(cli::ProgressFn);
+
+impl ProgressCallback {
+    pub fn wrap(delegate: cli::ProgressFn) -> Box<dyn aws_smithy_http::callback::BodyCallback> {
+        Box::new(ProgressCallback(delegate))
+    }
+}
+
+type BoxError = Box<dyn std::error::Error + Send + Sync>;
+impl aws_smithy_http::callback::BodyCallback for ProgressCallback {
+    fn update(&mut self, bytes: &[u8]) -> Result<(), BoxError> {
+        (self.0)(cli::Update::StateProgress(bytes.len()));
+        Ok(())
+    }
+
+    fn make_new(&self) -> Box<dyn aws_smithy_http::callback::BodyCallback> {
+        Box::new(self.clone())
+    }
+}
+
 impl Client {
-    pub async fn put(&self, opts: &SharedOptions, path: &std::path::Path, s3_uri: &Uri) -> Result<String, Error> {
-        let stream = ByteStream::from_path(path)
+    pub async fn put(&self, verbose: bool, path: &std::path::Path, s3_uri: &Uri, progress_fn: cli::ProgressFn) -> Result<String, Error> {
+        progress_fn(cli::Update::State("opening"));
+        let mut stream = ByteStream::from_path(path)
             .await
             .map_err(|e| Error::File(e.into()))?;
         let mut key = s3_uri.key.clone();
         let (_, size_hint) = stream.size_hint();
+        stream.with_body_callback(ProgressCallback::wrap(progress_fn.clone()));
         if s3_uri.filename().is_none() {
             let local_filename = path.file_name()
                 .ok_or(Error::NoFilename)?
@@ -73,11 +97,16 @@ impl Client {
             key.push_str(local_filename);
         }
         let path_printable = path.to_string_lossy();
-        if opts.verbose {
+        let destination = format!("s3://{}/{key}", s3_uri.bucket);
+        if verbose {
             match size_hint {
-                Some(size) => println!("🏁 uploading '{path_printable}' [{size} bytes] to s3://{}/{key}", s3_uri.bucket),
-                None => println!("🏁 uploading '{path_printable}' to s3://{}/{key}", s3_uri.bucket),
+                Some(size) => println!("🏁 uploading '{path_printable}' [{size} bytes] to {destination}"),
+                None => println!("🏁 uploading '{path_printable}' to {destination}"),
             };
+        }
+        progress_fn(cli::Update::State("uploading"));
+        if let Some(size) = size_hint {
+            progress_fn(cli::Update::StateLength(size));
         }
         self.client.put_object()
             .bucket(s3_uri.bucket.clone())
@@ -86,7 +115,8 @@ impl Client {
             .send()
             .await
             .map_err(|e| -> aws_sdk_s3::Error { e.into() } )?;
-        Ok(format!("s3://{}/{}", s3_uri.bucket, key))
+        progress_fn(cli::Update::Finished());
+        Ok(destination)
     }
     pub async fn remove(&self, opts: &SharedOptions, s3_uri: &Uri) -> Result<(), Error> {
         if opts.verbose {
@@ -143,12 +173,6 @@ impl Client {
     }
 }
 
-fn digit_count(num: u64) -> usize {
-    if num == 0 {
-        return 1;
-    }
-    ((num as f32).log10() + 1f32) as u8 as usize
-}
 const DATE_LEN: usize = "2022-01-01T00:00:00Z".len();
 
 fn basename(path: &str) -> &str {
@@ -211,7 +235,7 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, pre
         .and_then(|c| c.iter().map(|file| file.size()).max())
         .unwrap_or(0);
 
-    let size_width = digit_count(max_file_size as u64);
+    let size_width = cli::digit_count(max_file_size as u64);
 
     let mut seen_directories = std::collections::hash_set::HashSet::new();
 
