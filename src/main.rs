@@ -38,7 +38,7 @@ struct Upload {
     paths: Vec<std::path::PathBuf>,
     /// S3 URI in s3://bucket/path/components format
     to: s3::Uri,
-    /// Perform multiple uploads concurrently, will continue over errors
+    /// Perform multiple uploads concurrently
     #[clap(long, short='j', parse(try_from_str=flag_concurrency_in_range))]
     concurrency: Option<u16>,
     /// Continue to next file on error

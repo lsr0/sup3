@@ -1,9 +1,17 @@
+#[derive(clap::ArgEnum, Debug, Clone)]
+pub enum ProgressOption {
+    On,
+    Off,
+    /// Enable if stdout/stderr are a termimal
+    Auto,
+}
+
 #[derive(clap::Args, Debug, Clone)]
 pub struct ArgProgress {
     /// Display transfer progress
     #[cfg(feature = "progress")]
-    #[clap(long, short='p')]
-    progress: bool,
+    #[clap(long, short='p', arg_enum, default_value="auto")]
+    progress: ProgressOption,
 }
 
 #[derive(Debug)]
@@ -45,8 +53,13 @@ mod progress_enabled {
     impl Output {
         pub fn new(args: &ArgProgress, task_count: usize) -> Output {
             let draw_target = indicatif::ProgressDrawTarget::stderr_with_hz(6);
+            let enabled = match args.progress {
+                ProgressOption::On => true,
+                ProgressOption::Off => false,
+                ProgressOption::Auto => console::user_attended() && console::user_attended_stderr(),
+            };
             Output {
-                enabled: args.progress && !draw_target.is_hidden(),
+                enabled: enabled && !draw_target.is_hidden(),
                 task_count,
                 multi: indicatif::MultiProgress::with_draw_target(draw_target),
                 ..Default::default()
