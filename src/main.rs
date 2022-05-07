@@ -77,9 +77,9 @@ struct ListFiles {
 
 #[derive(Args, Debug)]
 struct Download {
+    /// S3 URIs in s3://bucket/path/components format
     #[clap(required = true)]
     uris: Vec<s3::Uri>,
-    /// S3 URI in s3://bucket/path/components format
     #[clap(parse(from_os_str))]
     to: std::path::PathBuf,
 
