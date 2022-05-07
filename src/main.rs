@@ -157,14 +157,14 @@ impl Upload {
 impl Download {
     fn validate_arguments_create(&self) -> Result<bool, String> {
         match self.to.metadata() {
-            Ok(meta) if meta.is_dir() => return Ok(true),
-            Ok(_) if self.uris.len() > 1 => return Err("multiple uris and destination is not a directory".to_owned()),
-            Ok(_) => return Ok(false),
+            Ok(meta) if meta.is_dir() => Ok(true),
+            Ok(_) if self.uris.len() > 1 => Err("multiple uris and destination is not a directory".to_owned()),
+            Ok(_) => Ok(false),
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
                 std::fs::create_dir(&self.to).map_err(|e| e.to_string())?;
-                return Ok(true);
+                Ok(true)
             },
-            Err(err) => return Err(err.to_string()),
+            Err(err) => Err(err.to_string()),
         }
     }
     async fn run(&self, client: &s3::Client, opts: &SharedOptions) {
@@ -208,13 +208,13 @@ impl Download {
             let update_fn_for_error = update_fn.clone();
             let fut = client.get(verbose, uri, &target, update_fn)
                 .inspect_err(move |e| update_fn_for_error(cli::Update::Error(e.to_string())))
-                .map_err(move |e| (e, uri.clone()))
+                .map_err(move |e| (e, uri))
                 .inspect_ok(report_success);
             started_futures.push(fut);
 
             if started_futures.len() >= concurrency.into() {
                 if let Err((e, uri)) = started_futures.next().await.expect("at least one future") {
-                    report_error(&uri, &e);
+                    report_error(uri, &e);
                     if !self.transfer.continue_on_error {
                         break;
                     }
@@ -226,7 +226,7 @@ impl Download {
         }
         while let Some(res) = started_futures.next().await {
             if let Err((e, path)) = res {
-                report_error(&path, &e);
+                report_error(path, &e);
             }
         }
 

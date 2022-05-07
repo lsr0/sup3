@@ -44,7 +44,6 @@ mod progress_enabled {
     const PREFIX_ERROR: console::Emoji = console::Emoji("❌ ", "");
     const PREFIX_DONE: console::Emoji = console::Emoji("✅ ", "");
 
-    #[derive(Default)]
     pub struct Output {
         enabled: bool,
         task_count: usize,
@@ -62,7 +61,6 @@ mod progress_enabled {
                 enabled: enabled && !draw_target.is_hidden(),
                 task_count,
                 multi: indicatif::MultiProgress::with_draw_target(draw_target),
-                ..Default::default()
             }
         }
         pub fn progress_enabled(&self) -> bool {
@@ -88,12 +86,12 @@ mod progress_enabled {
                 let rb = grey.apply_to(")");
                 bar.set_prefix(format!("{lb}{:digits$}/{}{rb} {name}", index + 1, self.task_count));
             } else {
-                bar.set_prefix(format!("{name}"));
+                bar.set_prefix(name);
             }
 
             Arc::new(move |update: Update| {
                 match update {
-                    Update::State(state_name) => bar.set_message(format!("{state_name}")),
+                    Update::State(state_name) => bar.set_message(state_name),
                     Update::StateLength(total) => bar.set_length(total as u64),
                     Update::StateProgress(inc_completed) => bar.inc(inc_completed as u64),
                     Update::Finished() => bar.finish_with_message("done"),

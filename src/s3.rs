@@ -69,10 +69,7 @@ pub enum Error {
 
 impl Error {
     pub fn should_cancel_other_operations(&self) -> bool {
-        match self {
-            Self::CtrlC => true,
-            _ => false,
-        }
+        matches!(self, Self::CtrlC)
     }
 }
 
@@ -109,7 +106,7 @@ impl Target {
             Self::Directory(path) => {
                 let mut local_path = path.clone();
                 local_path.push(from.filename().ok_or(Error::NoFilename)?);
-                return Ok(local_path);
+                Ok(local_path)
             },
         }
     }
@@ -274,7 +271,7 @@ fn key_matches_requested(requested: &str, key: &str, args: &ListArguments) -> bo
         return true;
     }
 
-    let requested_directory = requested.ends_with('/') || requested.len() == 0;
+    let requested_directory = requested.ends_with('/') || requested.is_empty();
     if requested_directory {
         let directory_path = basename(requested);
         return key.starts_with(directory_path);
@@ -313,7 +310,7 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, pre
             format!("s3://{bucket}/{}", if key == "/" { "" } else { key })
         } else {
             let filename = key.strip_prefix(&directory_prefix).unwrap_or(key);
-            format!("{filename}")
+            filename.to_owned()
         }
     };
 
@@ -358,7 +355,7 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, pre
             if args.long {
                 let date = file.last_modified()
                     .and_then(|d| d.fmt(aws_smithy_types::date_time::Format::DateTime).ok())
-                    .unwrap_or("".to_owned());
+                    .unwrap_or_else(|| "".to_owned());
                 println!("{:size_width$} {date:DATE_LEN$} {name}", file.size());
             } else {
                 println!("{name}");

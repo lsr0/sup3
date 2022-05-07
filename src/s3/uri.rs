@@ -38,7 +38,7 @@ impl std::str::FromStr for Uri {
 impl Uri {
     pub fn filename(&self) -> Option<&str> {
         match self.key.rsplit_once('/') {
-            None if self.key.len() > 0 => Some(&self.key),
+            None if !self.key.is_empty() => Some(&self.key),
             None => None,
             Some((_, "")) => None,
             Some((_, filename)) => Some(filename),
