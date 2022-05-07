@@ -23,8 +23,10 @@ struct Arguments {
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Upload to S3
+    #[clap(alias="up")]
     Upload(Upload),
     /// Download from S3
+    #[clap(alias="down")]
     Download(Download),
     /// Remove from S3
     ///
