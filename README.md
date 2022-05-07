@@ -15,22 +15,22 @@ Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/aw
 ## Features
 * Cross-platform
 * Uses authorisation support from the [Rust AWS SDK](https://github.com/awslabs/aws-sdk-rust)
-* Streaming async uploads (files not read into memory)
+* Streaming async transfers (files not read into memory)
 * Upload resume on remote errors (provided by the SDK)
 * No startup delay
 * No runtime non-platform dependencies (e.g. `libc`, `libm`, `libgcc_s`)
-* Concurrent uploads
+* Concurrent transfers
 * Optional progress reporting
 
 
 ## Commands
 * Upload (`upload`) (`1..N` local files to S3 remote)
+* Download (`download`) (`1..N` S3 URIs to local file/directory)
 * Remove (`rm`) (a single S3 URI)
 * List (`ls`) (`1..N` S3 URIs)
 
 
 ## TODO
 * Directory upload support
-* Support continuing to next file on error
 * Binary size reduction
 * More commands

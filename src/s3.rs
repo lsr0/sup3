@@ -2,6 +2,8 @@ use aws_types::region::Region;
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{types::ByteStream, output::ListObjectsV2Output};
 use futures::stream::Stream;
+use futures::TryStreamExt;
+use tokio::io::AsyncWriteExt;
 
 use crate::shared_options::SharedOptions;
 use crate::cli;
@@ -57,6 +59,21 @@ pub enum Error {
     NoFilename,
     #[error("specified local filename not unicode")]
     LocalFilenameNotUnicode,
+    #[error("local file: {0}")]
+    LocalFile(#[from] std::io::Error),
+    #[error("streaming: {0}")]
+    Streaming(#[from] aws_smithy_http::byte_stream::Error),
+    #[error("cancelled by Ctrl-C")]
+    CtrlC,
+}
+
+impl Error {
+    pub fn should_cancel_other_operations(&self) -> bool {
+        match self {
+            Self::CtrlC => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -78,6 +95,34 @@ impl aws_smithy_http::callback::BodyCallback for ProgressCallback {
     fn make_new(&self) -> Box<dyn aws_smithy_http::callback::BodyCallback> {
         Box::new(self.clone())
     }
+}
+
+pub enum Target {
+    Directory(std::path::PathBuf),
+    File(std::path::PathBuf),
+}
+
+impl Target {
+    fn local_path(&self, from: &Uri) -> Result<std::path::PathBuf, Error> {
+        match self {
+            Self::File(path) => Ok(path.clone()),
+            Self::Directory(path) => {
+                let mut local_path = path.clone();
+                local_path.push(from.filename().ok_or(Error::NoFilename)?);
+                return Ok(local_path);
+            },
+        }
+    }
+}
+
+async fn cleanup_temporary_file(_file: tokio::fs::File, path: &std::path::Path) -> Result<(), std::io::Error> {
+    #[cfg(target_family = "windows")]
+    {
+        let mut file_to_drop = _file;
+        file_to_drop.flush().await?;
+    }
+    tokio::fs::remove_file(path).await?;
+    Ok(())
 }
 
 impl Client {
@@ -117,6 +162,47 @@ impl Client {
             .map_err(|e| -> aws_sdk_s3::Error { e.into() } )?;
         progress_fn(cli::Update::Finished());
         Ok(destination)
+    }
+    pub async fn get(&self, verbose: bool, from: &Uri, to: &Target, progress_fn: cli::ProgressFn) -> Result<std::path::PathBuf, Error> {
+        progress_fn(cli::Update::State("opening"));
+        let local_path = to.local_path(from)?;
+        let mut path_string_temporary = local_path.as_os_str().to_owned();
+        path_string_temporary.push(".sup3.partial");
+        let local_path_temporary = std::path::PathBuf::from(path_string_temporary);
+        let path_printable = local_path.to_string_lossy();
+        let local_file = tokio::fs::File::create(&local_path_temporary).await?;
+        progress_fn(cli::Update::State("connecting"));
+        let mut response = self.client.get_object()
+            .bucket(from.bucket.clone())
+            .key(from.key.clone())
+            .send()
+            .await
+            .map_err(|e| -> aws_sdk_s3::Error { e.into() } )?;
+
+        progress_fn(cli::Update::State("downloading"));
+        progress_fn(cli::Update::StateLength(response.content_length() as usize));
+        if verbose {
+            println!("🏁 downloading '{from}' [{size} bytes] to {path_printable}", size = response.content_length());
+        }
+        response.body.with_body_callback(ProgressCallback::wrap(progress_fn.clone()));
+        let mut buffered_file = tokio::io::BufWriter::new(local_file);
+        loop {
+            let next_block = response.body.try_next();
+            tokio::select!{
+                _ = tokio::signal::ctrl_c() => {
+                    cleanup_temporary_file(buffered_file.into_inner(), &local_path_temporary).await?;
+                    return Err(Error::CtrlC);
+                }
+                result = next_block => match result {
+                    Ok(Some(bytes)) => buffered_file.write_all(&bytes).await?,
+                    Ok(None) => break,
+                    Err(e) => return Err(e.into()),
+                },
+            }
+        }
+        tokio::fs::rename(local_path_temporary, &local_path).await?;
+        progress_fn(cli::Update::Finished());
+        Ok(local_path)
     }
     pub async fn remove(&self, opts: &SharedOptions, s3_uri: &Uri) -> Result<(), Error> {
         if opts.verbose {
