@@ -205,7 +205,7 @@ impl Client {
         if opts.verbose {
             println!("🏁 removing s3://{}/{}... ", s3_uri.bucket, s3_uri.key);
         }
-        self.client.put_object()
+        self.client.delete_object()
             .bucket(s3_uri.bucket.clone())
             .key(s3_uri.key.clone())
             .send()
