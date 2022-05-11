@@ -16,12 +16,17 @@ pub struct Client {
     client: aws_sdk_s3::Client,
 }
 
-pub async fn init(region: Option<String>) -> Client {
+pub async fn init(region: Option<String>, endpoint: Option<http::uri::Uri>) -> Client {
     let provided_region = region.map(Region::new);
     let region_provider = RegionProviderChain::first_try(provided_region)
         .or_default_provider()
         .or_else("eu-west-1");
-    let config = aws_config::from_env().region(region_provider).load().await;
+    let mut builder = aws_config::from_env().region(region_provider);
+    if let Some(uri) = endpoint {
+        let endpoint = aws_smithy_http::endpoint::Endpoint::mutable(uri);
+        builder = builder.endpoint_resolver(endpoint);
+    }
+    let config = builder.load().await;
     let client = aws_sdk_s3::Client::new(&config);
     Client {
         client,

@@ -13,8 +13,12 @@ struct Arguments {
     #[clap(subcommand)]
     command: Commands,
 
-    #[clap(long, short='r')]
+    #[clap(long, short='R', global=true)]
     region: Option<String>,
+
+    #[clap(long, short='e', global=true)]
+    /// Use custom endpoint URL for other S3 implementations
+    endpoint: Option<http::uri::Uri>,
 
     #[clap(flatten)]
     shared: SharedOptions,
@@ -260,7 +264,7 @@ impl ListFiles {
 async fn main() {
     let args = Arguments::parse();
 
-    let client = s3::init(args.region).await;
+    let client = s3::init(args.region, args.endpoint).await;
 
     match &args.command {
         Commands::Upload(upload) => upload.run(&client, &args.shared).await,
