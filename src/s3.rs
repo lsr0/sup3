@@ -259,6 +259,23 @@ impl Client {
         ls_consume_response(args, &response, &s3_uri.key, &s3_uri.bucket);
         Ok(())
     }
+    pub async fn list_buckets(&self, opts: &SharedOptions) -> Result<(), Error> {
+        if opts.verbose {
+            println!("🏁 listing buckets... ");
+        }
+        let response = self.client.list_buckets()
+            .send()
+            .await
+            .map_err(|e| -> aws_sdk_s3::Error { e.into() } )?;
+
+        for bucket in response.buckets.unwrap_or_default() {
+            if let Some(name) = bucket.name {
+                println!("{name}");
+            }
+        }
+
+        Ok(())
+    }
 }
 
 const DATE_LEN: usize = "2022-01-01T00:00:00Z".len();

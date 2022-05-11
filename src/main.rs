@@ -38,6 +38,8 @@ enum Commands {
     Rm(Remove),
     /// List S3 path
     Ls(ListFiles),
+    /// List S3 buckets
+    ListBuckets(ListBuckets),
 }
 
 #[derive(Args, Debug)]
@@ -89,6 +91,10 @@ struct Download {
 
     #[clap(flatten)]
     transfer: OptionsTransfer,
+}
+
+#[derive(Args, Debug)]
+struct ListBuckets {
 }
 
 
@@ -260,6 +266,15 @@ impl ListFiles {
     }
 }
 
+impl ListBuckets {
+    async fn run(&self, client: &s3::Client, opts: &SharedOptions) {
+        if let Err(e) = client.list_buckets(opts).await {
+            eprintln!("❌: failed to list buckets: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let args = Arguments::parse();
@@ -271,6 +286,7 @@ async fn main() {
         Commands::Download(download) => download.run(&client, &args.shared).await,
         Commands::Rm(remove) => remove.run(&client, &args.shared).await,
         Commands::Ls(list) => list.run(&client, &args.shared).await,
+        Commands::ListBuckets(list_buckets) => list_buckets.run(&client, &args.shared).await,
     }
 }
 
