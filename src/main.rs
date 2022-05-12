@@ -39,6 +39,7 @@ enum Commands {
     /// List S3 path
     Ls(ListFiles),
     /// List S3 buckets
+    #[clap(alias="lb")]
     ListBuckets(ListBuckets),
 }
 
