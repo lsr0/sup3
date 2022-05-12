@@ -19,18 +19,24 @@ Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/aw
 * Upload resume on remote errors (provided by the SDK)
 * No startup delay
 * No runtime non-platform dependencies (e.g. `libc`, `libm`, `libgcc_s`)
-* Concurrent transfers
-* Optional progress reporting
+* [x] Concurrent transfers
+* [x] Optional progress reporting
+* [ ] Recursive upload support
+* [ ] Recursive download support
+* [ ] Remote globbing (e.g. `sup3 ls s3://bucket/media/**/highres*.png .`)
+* [ ] Binary size reduction
+* [ ] Upload arguments, e.g. ACLs
+* [ ] Config file support
+* [ ] List only files or only directories
 
 
 ## Commands
-* Upload (`upload`) (`1..N` local files to S3 remote)
-* Download (`download`) (`1..N` S3 URIs to local file/directory)
-* Remove (`rm`) (a single S3 URI)
+* Upload (`upload`|`down`) (local files to S3 remote)
+* Download (`download`|`down`) (S3 URIs to local file/directory)
+* Remove (`rm`) (S3 URIs)
 * List (`ls`) (`1..N` S3 URIs)
+* [x] List Buckets (`list-buckets`|`lb`)
+* [ ] Copy (download/upload/server-to-server from arguments)
+* [ ] Cat (S3 URIs)
+* [ ] Touch (S3 URIs)
 
-
-## TODO
-* Directory upload support
-* Binary size reduction
-* More commands
