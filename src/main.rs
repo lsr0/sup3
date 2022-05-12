@@ -69,7 +69,8 @@ struct Upload {
 #[derive(Args, Debug)]
 struct Remove {
     /// S3 URI in s3://bucket/path/components format
-    remote_path: s3::Uri,
+    #[clap(required = true)]
+    remote_paths: Vec<s3::Uri>,
 }
 
 #[derive(Args, Debug)]
@@ -248,9 +249,11 @@ impl Download {
 
 impl Remove {
     async fn run(&self, client: &s3::Client, opts: &SharedOptions) {
-        if let Err(e) = client.remove(opts, &self.remote_path).await {
-            eprintln!("❌: failed to remove {:?}: {e}", self.remote_path);
-            std::process::exit(1);
+        for uri in &self.remote_paths {
+            if let Err(e) = client.remove(opts, &uri).await {
+                eprintln!("❌: failed to remove {}: {e}", uri);
+                std::process::exit(1);
+            }
         }
     }
 }
@@ -259,7 +262,7 @@ impl ListFiles {
     async fn run(&self, client: &s3::Client, opts: &SharedOptions) {
         for uri in &self.remote_paths {
             if let Err(e) = client.ls(opts, &self.command_args, uri).await {
-                eprintln!("❌: failed to list {:?}: {e}", uri);
+                eprintln!("❌: failed to list {uri}: {e}");
                 std::process::exit(1);
             }
         }
