@@ -215,7 +215,7 @@ impl Download {
 
         let mut started_futures = FuturesUnordered::new();
         for (i, uri) in self.uris.iter().enumerate() {
-            let filename = uri.filename().unwrap_or(&uri.key).to_owned();
+            let filename = uri.filename().unwrap_or(uri.key.as_str()).to_owned();
             let update_fn = progress.add(i, "initialising", filename);
             let update_fn_for_error = update_fn.clone();
             let fut = client.get(verbose, uri, &target, update_fn)

@@ -10,7 +10,7 @@ use crate::cli;
 
 mod uri;
 
-pub use uri::{Uri, UriError};
+pub use uri::{Uri, UriError, Key};
 
 pub struct Client {
     client: aws_sdk_s3::Client,
@@ -141,7 +141,7 @@ impl Client {
                 .ok_or(Error::NoFilename)?
                 .to_str()
                 .ok_or(Error::LocalFilenameNotUnicode)?;
-            key.push_str(local_filename);
+            key.push(local_filename);
         }
         let path_printable = path.to_string_lossy();
         let destination = format!("s3://{}/{key}", s3_uri.bucket);
@@ -157,7 +157,7 @@ impl Client {
         }
         self.client.put_object()
             .bucket(s3_uri.bucket.clone())
-            .key(key.clone())
+            .key(key.to_string())
             .body(stream)
             .send()
             .await
@@ -176,7 +176,7 @@ impl Client {
         progress_fn(cli::Update::State("connecting"));
         let mut response = self.client.get_object()
             .bucket(from.bucket.clone())
-            .key(from.key.clone())
+            .key(from.key.to_string())
             .send()
             .await
             .map_err(|e| -> aws_sdk_s3::Error { e.into() } )?;
@@ -212,17 +212,17 @@ impl Client {
         }
         self.client.delete_object()
             .bucket(s3_uri.bucket.clone())
-            .key(s3_uri.key.clone())
+            .key(s3_uri.key.to_string())
             .send()
             .await
             .map_err(|e| -> aws_sdk_s3::Error { e.into() } )?;
         Ok(())
     }
 
-    async fn ls_inner(&self, bucket: &str, key: &str, delimiter: Option<char>) -> Result<ListObjectsV2Output, aws_sdk_s3::Error> {
+    async fn ls_inner(&self, bucket: &str, key: &Key, delimiter: Option<char>) -> Result<ListObjectsV2Output, aws_sdk_s3::Error> {
         self.client.list_objects_v2()
             .bucket(bucket.to_owned())
-            .prefix(key.to_owned())
+            .prefix(key.to_string())
             .set_delimiter(delimiter.map(|c| c.into()))
             .send()
             .await
@@ -243,7 +243,7 @@ impl Client {
                     .as_ref()
                     .map(|c| c.len())
                     .unwrap_or(0);
-                let directory_name = s3_uri.key.clone() + "/";
+                let directory_name = s3_uri.key.to_explicit_directory();
                 if *file_count == 0 && directories.len() == 1 && directories[0].prefix.as_ref() == Some(&directory_name) {
                     if opts.verbose {
                         eprintln!("+ result was a directory name, requesting directory listing s3://{}/{directory_name}...", s3_uri.bucket);
@@ -284,54 +284,54 @@ fn basename(path: &str) -> &str {
     path.trim_end_matches(|c| c != '/')
 }
 
-fn key_matches_requested(requested: &str, key: &str, args: &ListArguments) -> bool {
+fn key_matches_requested(requested: &Key, key: &str, args: &ListArguments) -> bool {
     if args.substring {
         return true
     }
 
-    if requested == key {
+    if requested.as_str() == key {
         return true;
     }
 
-    let requested_directory = requested.ends_with('/') || requested.is_empty();
+    let requested_directory = requested.is_explicitly_directory();
     if requested_directory {
-        let directory_path = basename(requested);
+        let directory_path = requested.basename();
         return key.starts_with(directory_path);
     } else if args.recurse {
-        if let Some(after_requested) = key.strip_prefix(requested) {
+        if let Some(after_requested) = key.strip_prefix(requested.as_str()) {
             return after_requested.starts_with('/');
         }
     }
 
-    if Some(requested) == key.strip_suffix('/') {
+    if Some(requested.as_str()) == key.strip_suffix('/') {
         return true
     }
 
     false
 }
 
-fn is_requested_path_directory(response: &ListObjectsV2Output, requested_path: &str) -> bool {
+fn is_requested_path_directory(response: &ListObjectsV2Output, requested_path: &Key) -> bool {
     let files = response.contents.iter().flatten();
     for name in files.flat_map(|f| f.key.as_ref()) {
-        if name.strip_prefix(requested_path).unwrap_or("").starts_with('/') {
+        if name.strip_prefix(requested_path.as_str()).unwrap_or("").starts_with('/') {
             return true;
         }
     }
     false
 }
 
-fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, prefix: &str, bucket: &str) {
-    let directory_prefix = if args.recurse && !prefix.ends_with('/') && is_requested_path_directory(response, prefix) {
-        prefix.to_owned() + "/"
+fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, prefix: &Key, bucket: &str) {
+    let directory_prefix = if args.recurse && !prefix.is_explicitly_directory() && is_requested_path_directory(response, prefix) {
+        prefix.to_explicit_directory()
     } else {
-        basename(prefix).to_owned()
+        prefix.basename_key()
     };
 
     let printable_filename = |key: &str| {
         if args.full_path {
             format!("s3://{bucket}/{}", if key == "/" { "" } else { key })
         } else {
-            let filename = key.strip_prefix(&directory_prefix).unwrap_or(key);
+            let filename = key.strip_prefix(directory_prefix.as_str()).unwrap_or(key);
             filename.to_owned()
         }
     };
@@ -369,7 +369,7 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, pre
             }
             if args.recurse {
                 let dir_path = basename(name);
-                if (dir_path != prefix) && seen_directories.insert(dir_path) {
+                if (dir_path != prefix.as_str()) && seen_directories.insert(dir_path) {
                     print_directory(dir_path);
                 }
             }

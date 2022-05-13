@@ -1,7 +1,10 @@
-#[derive (Debug)]
+#[derive (Clone, Debug, PartialEq)]
+pub struct Key(String);
+
+#[derive (Clone, Debug)]
 pub struct Uri {
     pub bucket: String,
-    pub key: String,
+    pub key: Key,
 }
 
 #[derive (thiserror::Error, Debug)]
@@ -30,19 +33,63 @@ impl std::str::FromStr for Uri {
         };
         Ok(Uri {
             bucket: bucket.to_string(),
-            key: parsed.path().strip_prefix('/').expect("URL separator must be /").to_string(),
+            key: Key(parsed.path().strip_prefix('/').expect("URL separator must be /").to_string()),
         })
+    }
+}
+
+impl Key {
+    pub fn new(key: String) -> Key {
+        Key(key)
+    }
+    pub fn filename(&self) -> Option<&str> {
+        match self.0.rsplit_once('/') {
+            None if !self.0.is_empty() => Some(&self.0),
+            None => None,
+            Some((_, "")) => None,
+            Some((_, filename)) => Some(filename),
+        }
+    }
+    pub fn is_explicitly_directory(&self) -> bool {
+        self.0.ends_with('/') || self.0.is_empty()
+    }
+    pub fn to_explicit_directory(&self) -> Key {
+        let mut key = self.0.clone();
+        if !self.is_explicitly_directory() {
+            key.push('/');
+        }
+        Key(key)
+    }
+    pub fn push(&mut self, component: &str) {
+        self.0.push_str(component);
+    }
+    pub fn basename(&self) -> &str {
+        self.0.trim_end_matches(|c| c != '/')
+    }
+    pub fn basename_key(&self) -> Key {
+        Key(self.basename().to_owned())
+    }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl core::ops::Deref for Key {
+    type Target = String;
+    fn deref(&self) -> &String {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Key {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "{}", self.0)
     }
 }
 
 impl Uri {
     pub fn filename(&self) -> Option<&str> {
-        match self.key.rsplit_once('/') {
-            None if !self.key.is_empty() => Some(&self.key),
-            None => None,
-            Some((_, "")) => None,
-            Some((_, filename)) => Some(filename),
-        }
+        self.key.filename()
     }
 }
 
