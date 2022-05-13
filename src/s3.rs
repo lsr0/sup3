@@ -9,6 +9,7 @@ use crate::shared_options::SharedOptions;
 use crate::cli;
 
 mod uri;
+mod partial_file;
 
 pub use uri::{Uri, UriError, Key};
 
@@ -117,13 +118,20 @@ impl Target {
     }
 }
 
-async fn cleanup_temporary_file(_file: tokio::fs::File, path: &std::path::Path) -> Result<(), std::io::Error> {
-    #[cfg(target_family = "windows")]
-    {
-        let mut file_to_drop = _file;
-        file_to_drop.flush().await?;
+async fn get_write_loop(local_file: &mut partial_file::PartialFile, mut body: aws_smithy_http::byte_stream::ByteStream) -> Result<(), Error> {
+    loop {
+        let next_block = body.try_next();
+        tokio::select!{
+            _ = tokio::signal::ctrl_c() => {
+                return Err(Error::CtrlC);
+            }
+            result = next_block => match result {
+                Ok(Some(bytes)) => local_file.writer.write_all(&bytes).await?,
+                Ok(None) => break,
+                Err(e) => return Err(e.into()),
+            },
+        }
     }
-    tokio::fs::remove_file(path).await?;
     Ok(())
 }
 
@@ -166,13 +174,6 @@ impl Client {
         Ok(destination)
     }
     pub async fn get(&self, verbose: bool, from: &Uri, to: &Target, progress_fn: cli::ProgressFn) -> Result<std::path::PathBuf, Error> {
-        progress_fn(cli::Update::State("opening"));
-        let local_path = to.local_path(from)?;
-        let mut path_string_temporary = local_path.as_os_str().to_owned();
-        path_string_temporary.push(".sup3.partial");
-        let local_path_temporary = std::path::PathBuf::from(path_string_temporary);
-        let path_printable = local_path.to_string_lossy();
-        let local_file = tokio::fs::File::create(&local_path_temporary).await?;
         progress_fn(cli::Update::State("connecting"));
         let mut response = self.client.get_object()
             .bucket(from.bucket.clone())
@@ -181,28 +182,23 @@ impl Client {
             .await
             .map_err(|e| -> aws_sdk_s3::Error { e.into() } )?;
 
+        progress_fn(cli::Update::State("opening"));
+        let local_path = to.local_path(from)?;
+        let mut local_file = partial_file::PartialFile::new(local_path).await?;
+
         progress_fn(cli::Update::State("downloading"));
         progress_fn(cli::Update::StateLength(response.content_length() as usize));
         if verbose {
-            println!("🏁 downloading '{from}' [{size} bytes] to {path_printable}", size = response.content_length());
+            println!("🏁 downloading '{from}' [{size} bytes] to {path_printable}", size = response.content_length(), path_printable = local_file.path_printable());
         }
         response.body.with_body_callback(ProgressCallback::wrap(progress_fn.clone()));
-        let mut buffered_file = tokio::io::BufWriter::new(local_file);
-        loop {
-            let next_block = response.body.try_next();
-            tokio::select!{
-                _ = tokio::signal::ctrl_c() => {
-                    cleanup_temporary_file(buffered_file.into_inner(), &local_path_temporary).await?;
-                    return Err(Error::CtrlC);
-                }
-                result = next_block => match result {
-                    Ok(Some(bytes)) => buffered_file.write_all(&bytes).await?,
-                    Ok(None) => break,
-                    Err(e) => return Err(e.into()),
-                },
+        let local_path = match get_write_loop(&mut local_file, response.body).await {
+            Ok(_) => local_file.finished().await?,
+            Err(err) => {
+                local_file.cancelled().await?;
+                return Err(err);
             }
-        }
-        tokio::fs::rename(local_path_temporary, &local_path).await?;
+        };
         progress_fn(cli::Update::Finished());
         Ok(local_path)
     }
