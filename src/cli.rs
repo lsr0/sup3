@@ -20,6 +20,7 @@ pub enum Update {
     StateLength(usize),
     StateProgress(usize),
     Finished(),
+    FinishedHide(),
     Error(String),
 }
 
@@ -41,16 +42,20 @@ mod progress_enabled {
     use super::*;
     pub type ProgressFn = Arc<dyn Fn(Update) + Send + Sync + 'static>;
 
-    const PREFIX_ERROR: console::Emoji = console::Emoji("❌ ", "");
-    const PREFIX_DONE: console::Emoji = console::Emoji("✅ ", "");
+    pub const PREFIX_ERROR: console::Emoji = console::Emoji("❌ ", "");
+    pub const PREFIX_DONE: console::Emoji = console::Emoji("✅ ", "");
 
+    pub struct Bar {
+        weak: indicatif::ProgressBar,
+        name: String,
+    }
     pub struct Output {
         enabled: bool,
-        task_count: usize,
         multi: indicatif::MultiProgress,
+        bars: std::sync::Mutex<Vec<Bar>>,
     }
     impl Output {
-        pub fn new(args: &ArgProgress, task_count: usize) -> Output {
+        pub fn new(args: &ArgProgress) -> Output {
             let draw_target = indicatif::ProgressDrawTarget::stderr_with_hz(6);
             let enabled = match args.progress {
                 ProgressOption::On => true,
@@ -59,35 +64,30 @@ mod progress_enabled {
             };
             Output {
                 enabled: enabled && !draw_target.is_hidden(),
-                task_count,
                 multi: indicatif::MultiProgress::with_draw_target(draw_target),
+                bars: Default::default(),
             }
         }
         pub fn progress_enabled(&self) -> bool {
             self.enabled
         }
-        pub fn add(&self, index: usize, initial_state: impl Into<String>, name: String) -> ProgressFn {
+        pub fn add(&self, initial_state: impl Into<String>, name: String) -> ProgressFn {
             if !self.enabled {
                 return Arc::new(|_update: Update| {});
             }
 
             let bar = indicatif::ProgressBar::new(1)
                 .with_message(initial_state.into());
-            bar.set_style(indicatif::ProgressStyle::with_template("{prefix:20.dim} {msg:>10.bold} {bytes:>10.cyan}/{total_bytes:>10.italic.250} {binary_bytes_per_sec:>11} {elapsed:>4} [{wide_bar:.red/blue}]")
+            bar.set_style(indicatif::ProgressStyle::with_template("{prefix:20.dim} {msg:>11.bold} {bytes:>10.cyan}/{total_bytes:>10.italic.250} {binary_bytes_per_sec:>11} {elapsed:>4} [{wide_bar:.red/blue}]")
                 .unwrap()
                 .progress_chars("#>-"));
 
             let bar = self.multi.add(bar);
 
-            if self.task_count > 1 {
-                let digits = digit_count(self.task_count as u64);
-                let grey = console::Style::new().color256(252);
-                let lb = grey.apply_to("(");
-                let rb = grey.apply_to(")");
-                bar.set_prefix(format!("{lb}{:digits$}/{}{rb} {name}", index + 1, self.task_count));
-            } else {
-                bar.set_prefix(name);
-            }
+            self.add_bar(Bar {
+                weak: bar.clone(),
+                name: name.clone(),
+            });
 
             Arc::new(move |update: Update| {
                 match update {
@@ -95,9 +95,32 @@ mod progress_enabled {
                     Update::StateLength(total) => bar.set_length(total as u64),
                     Update::StateProgress(inc_completed) => bar.inc(inc_completed as u64),
                     Update::Finished() => bar.finish_with_message("done"),
+                    Update::FinishedHide() => { bar.finish_and_clear(); bar.set_draw_target(indicatif::ProgressDrawTarget::hidden()); },
                     Update::Error(err) => bar.abandon_with_message(format!("{PREFIX_ERROR}failed: {err}")),
                 }
             })
+        }
+        fn add_bar(&self, added: Bar) {
+            let mut bars = self.bars.lock().unwrap();
+            bars.push(added);
+            if bars.len() == 1 {
+                let added = bars.get(0).expect("just added");
+                added.weak.set_prefix(added.name.clone());
+            } else {
+                let name_len = bars.iter().map(|bar| bar.name.len()).max().unwrap_or(0);
+                let mut index = 0;
+                for bar in bars.iter() {
+                    if bar.weak.is_hidden() {
+                        continue;
+                    }
+                    let digits = digit_count(bars.len() as u64);
+                    let grey = console::Style::new().color256(252);
+                    let lb = grey.apply_to("(");
+                    let rb = grey.apply_to(")");
+                    bar.weak.set_prefix(format!("{lb}{:digits$}/{}{rb} {name:name_len$}", index + 1, bars.len(), name = bar.name));
+                    index += 1;
+                }
+            }
         }
         pub fn println(&self, prefix: &impl std::fmt::Display, args: std::fmt::Arguments) {
             if !self.enabled {
@@ -112,6 +135,18 @@ mod progress_enabled {
         pub fn println_done(&self, args: std::fmt::Arguments) {
             self.println(&PREFIX_DONE, args);
         }
+        pub fn mark_cancelled(&self) {
+            if !self.enabled {
+                return;
+            }
+            let bars = self.bars.lock().unwrap();
+            for bar in bars.iter() {
+                if bar.weak.is_hidden() || bar.weak.is_finished() {
+                    continue;
+                }
+                bar.weak.abandon_with_message(format!("{PREFIX_ERROR}cancelled"));
+            }
+        }
     }
 }
 
@@ -124,8 +159,8 @@ mod progress_disabled {
     pub fn empty_progress_fn(_update: Update) { }
     pub type ProgressFn = fn(Update);
 
-    const PREFIX_ERROR: &'static str = "❌ ";
-    const PREFIX_DONE: &'static str = "✅ ";
+    pub const PREFIX_ERROR: &'static str = "❌ ";
+    pub const PREFIX_DONE: &'static str = "✅ ";
 
     #[derive(Default)]
     pub struct Output {
@@ -145,6 +180,8 @@ mod progress_disabled {
         }
         pub fn println_done(&self, args: std::fmt::Arguments) {
             stderr_println(&PREFIX_DONE, args);
+        }
+        pub fn mark_cancelled(&self) {
         }
     }
 }

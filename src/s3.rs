@@ -4,6 +4,7 @@ use aws_sdk_s3::{types::ByteStream, output::ListObjectsV2Output};
 use futures::stream::Stream;
 use futures::TryStreamExt;
 use tokio::io::AsyncWriteExt;
+use tokio_util::sync::CancellationToken;
 
 use crate::shared_options::SharedOptions;
 use crate::cli;
@@ -13,6 +14,7 @@ mod partial_file;
 
 pub use uri::{Uri, UriError, Key};
 
+#[derive(Clone)]
 pub struct Client {
     client: aws_sdk_s3::Client,
 }
@@ -69,13 +71,15 @@ pub enum Error {
     LocalFile(#[from] std::io::Error),
     #[error("streaming: {0}")]
     Streaming(#[from] aws_smithy_http::byte_stream::Error),
-    #[error("cancelled by Ctrl-C")]
-    CtrlC,
+    #[error("cancelled")]
+    Cancelled,
+    #[error("no such remote file: {0}")]
+    NoSuchKey(Uri),
 }
 
 impl Error {
     pub fn should_cancel_other_operations(&self) -> bool {
-        matches!(self, Self::CtrlC)
+        matches!(self, Self::Cancelled)
     }
 }
 
@@ -100,6 +104,7 @@ impl aws_smithy_http::callback::BodyCallback for ProgressCallback {
     }
 }
 
+#[derive (Clone)]
 pub enum Target {
     Directory(std::path::PathBuf),
     File(std::path::PathBuf),
@@ -116,23 +121,29 @@ impl Target {
             },
         }
     }
-}
-
-async fn get_write_loop(local_file: &mut partial_file::PartialFile, mut body: aws_smithy_http::byte_stream::ByteStream) -> Result<(), Error> {
-    loop {
-        let next_block = body.try_next();
-        tokio::select!{
-            _ = tokio::signal::ctrl_c() => {
-                return Err(Error::CtrlC);
-            }
-            result = next_block => match result {
-                Ok(Some(bytes)) => local_file.writer.write_all(&bytes).await?,
-                Ok(None) => break,
-                Err(e) => return Err(e.into()),
-            },
+    pub fn path(&self) -> std::path::PathBuf {
+        match self {
+            Self::File(path) | Self::Directory(path) => path.clone()
         }
     }
+}
+
+async fn get_write_loop(local_file: &mut partial_file::PartialFile, mut body: aws_smithy_http::byte_stream::ByteStream, cancel: CancellationToken) -> Result<(), Error> {
+    loop {
+        let next_block = body.try_next();
+        match next_block.await {
+            Ok(Some(bytes)) => local_file.writer().write_all(&bytes).await?,
+            Ok(None) => break,
+            Err(_) if cancel.is_cancelled() => return Err(Error::Cancelled),
+            Err(e) => return Err(e.into()),
+        };
+    }
     Ok(())
+}
+
+pub enum GetRecursiveResult {
+    One(std::path::PathBuf),
+    Many{bucket: String, keys: Vec<Key>, target: Target},
 }
 
 impl Client {
@@ -173,14 +184,38 @@ impl Client {
         progress_fn(cli::Update::Finished());
         Ok(destination)
     }
-    pub async fn get(&self, verbose: bool, from: &Uri, to: &Target, progress_fn: cli::ProgressFn) -> Result<std::path::PathBuf, Error> {
+    pub async fn get_recursive(&self, verbose: bool, recursive: bool, from: Uri, to: Target, progress_fn: cli::ProgressFn, cancel: CancellationToken) -> Result<GetRecursiveResult, Error> {
+        match self.get(verbose, &from, &to, progress_fn.clone(), cancel).await {
+            Err(Error::NoSuchKey(uri)) if recursive => {
+                let recursive_files = self.get_recursive_list(&uri).await?;
+                progress_fn(cli::Update::FinishedHide());
+                let mut child_path = to.path();
+                child_path.push(uri.key.as_directory_component());
+                use std::io::ErrorKind::AlreadyExists;
+                tokio::fs::create_dir(&child_path).await
+                    .or_else(|err| if err.kind() == AlreadyExists { Ok(()) } else { Err(err) })?;
+                let target = Target::Directory(child_path);
+                return Ok(GetRecursiveResult::Many{bucket: from.bucket.clone(), keys: recursive_files, target});
+            },
+            Ok(path) => Ok(GetRecursiveResult::One(path)),
+            Err(err) => Err(err),
+        }
+    }
+    pub async fn get(&self, verbose: bool, from: &Uri, to: &Target, progress_fn: cli::ProgressFn, cancel: CancellationToken) -> Result<std::path::PathBuf, Error> {
         progress_fn(cli::Update::State("connecting"));
-        let mut response = self.client.get_object()
+        let response = self.client.get_object()
             .bucket(from.bucket.clone())
             .key(from.key.to_string())
             .send()
-            .await
-            .map_err(|e| -> aws_sdk_s3::Error { e.into() } )?;
+            .await;
+
+        if let Err(aws_sdk_s3::types::SdkError::ServiceError{err, ..}) = &response {
+            if err.is_no_such_key() {
+                return Err(Error::NoSuchKey(from.clone()));
+            }
+        }
+
+        let mut response = response.map_err(|e| -> aws_sdk_s3::Error { e.into() } )?;
 
         progress_fn(cli::Update::State("opening"));
         let local_path = to.local_path(from)?;
@@ -192,7 +227,7 @@ impl Client {
             println!("🏁 downloading '{from}' [{size} bytes] to {path_printable}", size = response.content_length(), path_printable = local_file.path_printable());
         }
         response.body.with_body_callback(ProgressCallback::wrap(progress_fn.clone()));
-        let local_path = match get_write_loop(&mut local_file, response.body).await {
+        let local_path = match get_write_loop(&mut local_file, response.body, cancel).await {
             Ok(_) => local_file.finished().await?,
             Err(err) => {
                 local_file.cancelled().await?;
@@ -201,6 +236,21 @@ impl Client {
         };
         progress_fn(cli::Update::Finished());
         Ok(local_path)
+    }
+    pub async fn get_recursive_list(&self, s3_uri: &Uri) -> Result<Vec<Key>, Error> {
+        let key = s3_uri.key.to_explicit_directory();
+        let files = self.ls_inner(&s3_uri.bucket, &key, None)
+            .await?;
+        let mut ret = Vec::new();
+        for key in files.contents.unwrap_or_default()
+            .into_iter()
+            .flat_map(|f| f.key) {
+            ret.push(Key::new(key));
+        }
+        if ret.len() == 0 {
+            return Err(Error::NoSuchKey(s3_uri.clone()));
+        }
+        Ok(ret)
     }
     pub async fn remove(&self, opts: &SharedOptions, s3_uri: &Uri) -> Result<(), Error> {
         if opts.verbose {

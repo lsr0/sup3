@@ -38,17 +38,21 @@ impl std::str::FromStr for Uri {
     }
 }
 
+pub fn filename(key: &str) -> Option<&str> {
+    match key.rsplit_once('/') {
+        None if !key.is_empty() => Some(&key),
+        None => None,
+        Some((_, "")) => None,
+        Some((_, filename)) => Some(filename),
+    }
+}
+
 impl Key {
     pub fn new(key: String) -> Key {
         Key(key)
     }
     pub fn filename(&self) -> Option<&str> {
-        match self.0.rsplit_once('/') {
-            None if !self.0.is_empty() => Some(&self.0),
-            None => None,
-            Some((_, "")) => None,
-            Some((_, filename)) => Some(filename),
-        }
+        filename(&self.0)
     }
     pub fn is_explicitly_directory(&self) -> bool {
         self.0.ends_with('/') || self.0.is_empty()
@@ -72,6 +76,10 @@ impl Key {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+    pub fn as_directory_component(&self) -> &str {
+        let without_slash = self.0.strip_suffix('/').unwrap_or(&self.0);
+        without_slash.rsplit_once('/').map(|(_, component)| component).unwrap_or("")
+    }
 }
 
 impl core::ops::Deref for Key {
@@ -88,6 +96,9 @@ impl std::fmt::Display for Key {
 }
 
 impl Uri {
+    pub fn new(bucket: String, key: Key) -> Uri {
+        Uri { bucket, key }
+    }
     pub fn filename(&self) -> Option<&str> {
         self.key.filename()
     }

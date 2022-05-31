@@ -22,7 +22,7 @@ Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/aw
 * [x] Concurrent transfers
 * [x] Optional progress reporting
 * [ ] Recursive upload support
-* [ ] Recursive download support
+* [x] Recursive download support
 * [ ] Remote globbing (e.g. `sup3 ls s3://bucket/media/**/highres*.png .`)
 * [ ] Binary size reduction
 * [ ] Upload arguments, e.g. ACLs
