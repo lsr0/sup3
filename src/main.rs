@@ -239,18 +239,6 @@ async fn start_one(uri: s3::Uri, target: s3::Target, recursive: bool, progress: 
 }
 
 impl Download {
-    fn validate_arguments_create(&self) -> Result<s3::Target, String> {
-        match self.to.metadata() {
-            Ok(meta) if meta.is_dir() => Ok(s3::Target::Directory(self.to.clone())),
-            Ok(_) if self.uris.len() > 1 => Err("multiple uris and destination is not a directory".to_owned()),
-            Ok(_) => Ok(s3::Target::File(self.to.clone())),
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                std::fs::create_dir(&self.to).map_err(|e| e.to_string())?;
-                Ok(s3::Target::Directory(self.to.clone()))
-            },
-            Err(err) => Err(err.to_string()),
-        }
-    }
     async fn run(&self, client: &s3::Client, opts: &SharedOptions) -> MainResult {
         let progress = Arc::new(cli::Output::new(&self.transfer.progress));
         let verbose = opts.verbose && !progress.progress_enabled();
@@ -264,7 +252,7 @@ impl Download {
             ctrlc_cancel.cancel();
         });
 
-        let target = match self.validate_arguments_create() {
+        let target = match s3::Target::new_create(&self.uris, &self.to) {
             Ok(i) => i,
             Err(err) => {
                 progress.println_error(format_args!("{err}"));

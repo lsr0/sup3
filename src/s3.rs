@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use aws_types::region::Region;
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{types::ByteStream, output::ListObjectsV2Output};
@@ -106,12 +108,24 @@ impl aws_smithy_http::callback::BodyCallback for ProgressCallback {
 
 #[derive (Clone)]
 pub enum Target {
-    Directory(std::path::PathBuf),
-    File(std::path::PathBuf),
+    Directory(PathBuf),
+    File(PathBuf),
 }
 
 impl Target {
-    fn local_path(&self, from: &Uri) -> Result<std::path::PathBuf, Error> {
+    pub fn new_create(uris: &[Uri], to: &PathBuf) -> Result<Target, String> {
+        match to.metadata() {
+            Ok(meta) if meta.is_dir() => Ok(Target::Directory(to.clone())),
+            Ok(_) if uris.len() > 1 => Err("multiple uris and destination is not a directory".to_owned()),
+            Ok(_) => Ok(Target::File(to.clone())),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                std::fs::create_dir(to).map_err(|e| e.to_string())?;
+                Ok(Target::Directory(to.clone()))
+            },
+            Err(err) => Err(err.to_string()),
+        }
+    }
+    fn local_path(&self, from: &Uri) -> Result<PathBuf, Error> {
         match self {
             Self::File(path) => Ok(path.clone()),
             Self::Directory(path) => {
@@ -121,7 +135,7 @@ impl Target {
             },
         }
     }
-    pub fn path(&self) -> std::path::PathBuf {
+    pub fn path(&self) -> PathBuf {
         match self {
             Self::File(path) | Self::Directory(path) => path.clone()
         }
@@ -142,7 +156,7 @@ async fn get_write_loop(local_file: &mut partial_file::PartialFile, mut body: aw
 }
 
 pub enum GetRecursiveResult {
-    One(std::path::PathBuf),
+    One(PathBuf),
     Many{bucket: String, keys: Vec<Key>, target: Target},
 }
 
@@ -201,7 +215,7 @@ impl Client {
             Err(err) => Err(err),
         }
     }
-    pub async fn get(&self, verbose: bool, from: &Uri, to: &Target, progress_fn: cli::ProgressFn, cancel: CancellationToken) -> Result<std::path::PathBuf, Error> {
+    pub async fn get(&self, verbose: bool, from: &Uri, to: &Target, progress_fn: cli::ProgressFn, cancel: CancellationToken) -> Result<PathBuf, Error> {
         progress_fn(cli::Update::State("connecting"));
         let response = self.client.get_object()
             .bucket(from.bucket.clone())
