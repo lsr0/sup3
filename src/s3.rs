@@ -119,8 +119,12 @@ impl Target {
             Ok(_) if uris.len() > 1 => Err("multiple uris and destination is not a directory".to_owned()),
             Ok(_) => Ok(Target::File(to.clone())),
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                std::fs::create_dir(to).map_err(|e| e.to_string())?;
-                Ok(Target::Directory(to.clone()))
+                if uris.len() > 1 {
+                    std::fs::create_dir(to).map_err(|e| e.to_string())?;
+                    Ok(Target::Directory(to.clone()))
+                } else {
+                    Ok(Target::File(to.clone()))
+                }
             },
             Err(err) => Err(err.to_string()),
         }
