@@ -18,6 +18,8 @@ pub enum UriError {
     InvalidScheme,
     #[error("missing bucket")]
     MissingBucket,
+    #[error("invalid url component provided: {0}")]
+    InvalidUrlComponents(&'static str),
 }
 
 impl std::str::FromStr for Uri {
@@ -27,13 +29,21 @@ impl std::str::FromStr for Uri {
         if parsed.scheme() != "s3" {
             return Err(UriError::InvalidScheme);
         }
+
+        parsed.query().is_none().then(|| ()).ok_or(UriError::InvalidUrlComponents("query string"))?;
+        parsed.username().is_empty().then(|| ()).ok_or(UriError::InvalidUrlComponents("username"))?;
+        parsed.password().is_none().then(|| ()).ok_or(UriError::InvalidUrlComponents("password"))?;
+        parsed.fragment().is_none().then(|| ()).ok_or(UriError::InvalidUrlComponents("fragment"))?;
+
         let bucket = match parsed.host() {
             None => return Err(UriError::MissingBucket),
             Some(b) => b,
         };
+        let path = parsed.path();
+        let key = if path.is_empty() { "".to_owned() } else { path.strip_prefix('/').expect("separator must be /").to_owned() };
         Ok(Uri {
             bucket: bucket.to_string(),
-            key: Key(parsed.path().strip_prefix('/').expect("URL separator must be /").to_string()),
+            key: Key(key),
         })
     }
 }
