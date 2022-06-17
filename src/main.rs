@@ -41,6 +41,8 @@ enum Commands {
     /// List S3 buckets
     #[clap(alias="lb")]
     ListBuckets(ListBuckets),
+    /// Copy to/from S3, depending on arguments
+    Cp(Copy),
 }
 
 #[derive(Args, Debug)]
@@ -87,6 +89,19 @@ struct Download {
 
 #[derive(Args, Debug)]
 struct ListBuckets {
+}
+
+#[derive(Args, Debug)]
+struct Copy {
+    /// Either <S3 URI..> <local path> or <local path..> <S3 URI>
+    #[clap(required = true, parse(try_from_os_str=CopyArgument::try_from))]
+    args: Vec<CopyArgument>,
+
+    #[clap(flatten)]
+    transfer: transfer::OptionsTransfer,
+
+    #[clap(long, short = 'r')]
+    recursive: bool,
 }
 
 pub enum MainResult {
@@ -162,6 +177,62 @@ impl ListBuckets {
     }
 }
 
+/// Either an S3 URI or a local path
+#[derive (Debug, Clone)]
+pub enum CopyArgument {
+    Uri(s3::Uri),
+    LocalFile(std::path::PathBuf),
+}
+
+impl TryFrom<&std::ffi::OsStr> for CopyArgument {
+    type Error = String;
+    fn try_from(arg: &std::ffi::OsStr) -> Result<Self, String> {
+        if let Some(unicode) = arg.to_str() {
+            match unicode.parse() {
+                Ok(uri) => return Ok(CopyArgument::Uri(uri)),
+                Err(s3::UriError::ParseError{..}) => {},
+                Err(other @ _) => return Err(format!("{other}")),
+            }
+        }
+        Ok(CopyArgument::LocalFile(std::path::PathBuf::from(arg)))
+    }
+}
+
+impl Copy {
+    async fn run(&self, client: &s3::Client, opts: &SharedOptions) -> MainResult {
+        let invalid_args = || {
+            use clap::CommandFactory;
+            let _ = Arguments::command()
+                .error(clap::ErrorKind::ArgumentConflict, "cp requires either <S3 URI..> <local path> or <local path..> <S3 URI>")
+                .print();
+            return MainResult::ErrorArguments;
+        };
+        match &self.args[..] {
+            [from @ .., CopyArgument::LocalFile(to)] => {
+                let mut uris = vec![];
+                for uri in from {
+                    match uri {
+                        CopyArgument::Uri(uri) => uris.push(uri.clone()),
+                        CopyArgument::LocalFile(_) => return invalid_args(),
+                    }
+                }
+                transfer::download(&uris, &to, client, opts, &self.transfer, self.recursive).await
+            },
+            [from @ .., CopyArgument::Uri(to)] => {
+                let mut paths = vec![];
+                for path in from {
+                    match path {
+                        CopyArgument::LocalFile(path) => paths.push(path.clone()),
+                        CopyArgument::Uri(_) => return invalid_args(),
+                    }
+                }
+                transfer::upload(&paths, &to, client, opts, &self.transfer).await
+            },
+            _ => return invalid_args(),
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> MainResult {
     let args = Arguments::parse();
@@ -174,6 +245,7 @@ async fn main() -> MainResult {
         Commands::Rm(remove) => remove.run(&client, &args.shared).await,
         Commands::Ls(list) => list.run(&client, &args.shared).await,
         Commands::ListBuckets(list_buckets) => list_buckets.run(&client, &args.shared).await,
+        Commands::Cp(copy) => copy.run(&client, &args.shared).await,
     };
     exit_code
 }
