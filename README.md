@@ -3,7 +3,7 @@
 **A standalone S3 uploader**
 
 ## Warning
-This is **pre-pre-alpha**
+This is **alpha**
 
 Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/awslabs/aws-sdk-rust) used is also in developer preview.
 
@@ -29,6 +29,7 @@ Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/aw
 * [ ] Config file support
 * [ ] List only files or only directories
 * [ ] List paging
+* [ ] Server to server copy
 
 
 ## Commands
@@ -37,7 +38,7 @@ Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/aw
 * Remove (`rm`) (S3 URIs)
 * List (`ls`) (`1..N` S3 URIs)
 * [x] List Buckets (`list-buckets`|`lb`)
-* [ ] Copy (download/upload/server-to-server from arguments)
+* [x] Copy (`cp`)
 * [ ] Cat (S3 URIs)
 * [ ] Touch (S3 URIs)
 
