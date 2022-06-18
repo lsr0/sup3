@@ -85,7 +85,7 @@ pub async fn upload(local_paths: &[std::path::PathBuf], to: &s3::Uri, client: &s
 }
 
 #[async_recursion::async_recursion]
-async fn start_one(uri: s3::Uri, target: s3::Target, recursive: bool, progress: Arc<cli::Output>, client: s3::Client, verbose: bool, semaphore: Arc<tokio::sync::Semaphore>, options: OptionsTransfer, cancel: tokio_util::sync::CancellationToken) -> u32 {
+async fn download_recursive_one(uri: s3::Uri, target: s3::Target, recursive: bool, progress: Arc<cli::Output>, client: s3::Client, verbose: bool, semaphore: Arc<tokio::sync::Semaphore>, options: OptionsTransfer, cancel: tokio_util::sync::CancellationToken) -> u32 {
     if cancel.is_cancelled() {
         return 1;
     }
@@ -106,7 +106,7 @@ async fn start_one(uri: s3::Uri, target: s3::Target, recursive: bool, progress: 
             let mut handles = Vec::new();
             for key in keys {
                 let key = key.clone();
-                let fut = start_one(s3::Uri::new(bucket.clone(), key), target.clone(), recursive, progress.clone(), client.clone(), verbose, semaphore.clone(), options.clone(), cancel.clone());
+                let fut = download_recursive_one(s3::Uri::new(bucket.clone(), key), target.clone(), recursive, progress.clone(), client.clone(), verbose, semaphore.clone(), options.clone(), cancel.clone());
                 handles.push(fut);
             }
             let results = futures::future::join_all(handles).await;
@@ -150,7 +150,7 @@ pub async fn download(uris: &[s3::Uri], to: &std::path::PathBuf, client: &s3::Cl
     let mut handles = Vec::new();
 
     for uri in uris.iter() {
-        let fut = start_one(uri.clone(), target.clone(), recursive, progress.clone(), client.clone(), verbose, semaphore.clone(), transfer.clone(), cancellation.clone());
+        let fut = download_recursive_one(uri.clone(), target.clone(), recursive, progress.clone(), client.clone(), verbose, semaphore.clone(), transfer.clone(), cancellation.clone());
         handles.push(fut);
 
         if cancellation.is_cancelled() {
