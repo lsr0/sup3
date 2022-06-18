@@ -12,13 +12,13 @@ default = ["progress"]
 progress = ["dep:indicatif", "dep:console"]
 
 [dependencies]
-aws-config = "0.12"
-aws-sdk-s3 = "0.12"
-aws-types = "0.12"
-aws-smithy-types = "0.42"
-aws-smithy-http = "0.42"
+aws-config = "0.13"
+aws-sdk-s3 = "0.13"
+aws-types = "0.13"
+aws-smithy-types = "0.43"
+aws-smithy-http = "0.43"
 tokio = { "version" = "1", features = ["full"] }
-clap = { "version" = "3", features = ["std", "color", "suggestions", "derive", "cargo", "unicode"] }
+clap = { "version" = "3.1", features = ["std", "color", "suggestions", "derive", "cargo", "unicode"] }
 url = "2"
 thiserror = "1"
 futures = "0.3"
