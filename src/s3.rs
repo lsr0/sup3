@@ -252,7 +252,7 @@ impl Client {
     }
     pub async fn get_recursive_list(&self, s3_uri: &Uri) -> Result<Vec<Key>, Error> {
         let key = s3_uri.key.to_explicit_directory();
-        let files = self.ls_inner(&s3_uri.bucket, &key, None)
+        let files = self.ls_inner(&s3_uri.bucket, &key, None, None)
             .await?;
         let mut ret = Vec::new();
         for key in files.contents.unwrap_or_default()
@@ -278,11 +278,12 @@ impl Client {
         Ok(())
     }
 
-    async fn ls_inner(&self, bucket: &str, key: &Key, delimiter: Option<char>) -> Result<ListObjectsV2Output, aws_sdk_s3::Error> {
+    async fn ls_inner(&self, bucket: &str, key: &Key, delimiter: Option<char>, continuation: Option<String>) -> Result<ListObjectsV2Output, aws_sdk_s3::Error> {
         self.client.list_objects_v2()
             .bucket(bucket.to_owned())
             .prefix(key.to_string())
             .set_delimiter(delimiter.map(|c| c.into()))
+            .set_continuation_token(continuation)
             .send()
             .await
             .map_err(|e| -> aws_sdk_s3::Error { e.into() } )
@@ -293,8 +294,9 @@ impl Client {
         }
         let separator = if args.recurse { None } else { Some('/') };
 
-        let response = self.ls_inner(&s3_uri.bucket, &s3_uri.key, separator)
+        let mut response = self.ls_inner(&s3_uri.bucket, &s3_uri.key, separator, None)
             .await?;
+        let mut relative_root = s3_uri.key.clone();
 
         if !args.directory {
             if let Some(directories) = &response.common_prefixes {
@@ -307,15 +309,29 @@ impl Client {
                     if opts.verbose {
                         eprintln!("+ result was a directory name, requesting directory listing s3://{}/{directory_name}...", s3_uri.bucket);
                     }
-                    let directory_response = self.ls_inner(&s3_uri.bucket, &directory_name, separator)
+                    let directory_response = self.ls_inner(&s3_uri.bucket, &directory_name, separator, None)
                         .await?;
-                    ls_consume_response(args, &directory_response, &directory_name, &s3_uri.bucket);
-                    return Ok(());
+                    response = directory_response;
+                    relative_root = directory_name;
                 }
             }
         }
 
-        ls_consume_response(args, &response, &s3_uri.key, &s3_uri.bucket);
+        ls_consume_response(args, &response, &relative_root, &s3_uri.bucket);
+
+        let mut continuation_token = response.next_continuation_token;
+        let mut page = 2;
+        while continuation_token.is_some() {
+            if opts.verbose {
+                println!("🏁 listing s3://{}/{} (page {page})... ", s3_uri.bucket, s3_uri.key);
+            }
+            let continuation_response = self.ls_inner(&s3_uri.bucket, &relative_root, separator, continuation_token.take())
+                .await?;
+
+            ls_consume_response(args, &continuation_response, &relative_root, &s3_uri.bucket);
+            continuation_token = continuation_response.next_continuation_token;
+            page += 1;
+        }
         Ok(())
     }
     pub async fn list_buckets(&self, opts: &SharedOptions) -> Result<(), Error> {

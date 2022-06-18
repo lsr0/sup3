@@ -28,7 +28,7 @@ Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/aw
 * [ ] Upload arguments, e.g. ACLs
 * [ ] Config file support
 * [ ] List only files or only directories
-* [ ] List paging
+* [x] List paging
 * [ ] Server to server copy
 
 
