@@ -1,6 +1,6 @@
 # sup3
 
-**A standalone S3 uploader**
+**A standalone S3 tool**
 
 ## Warning
 This is **alpha**
@@ -10,6 +10,11 @@ Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/aw
 ## Usage goal
 * CI and other minimal environments where pulling in python or building dependencies might be undesirable
 * Eventually, as a consistent, reliable, fast and fun S3 tool for interactive use
+
+
+## Design
+* Act as much as possible like existing unix commands (e.g. cp, ls, cat)
+* Progress reporting by default where it makes sense (e.g. cp, down, up)
 
 
 ## Features
@@ -30,6 +35,7 @@ Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/aw
 * [ ] List only files or only directories
 * [x] List paging
 * [ ] Server to server copy
+* [x] Custom endpoints for other S3-compatible hosts (`--endpoint`)
 
 
 ## Commands
