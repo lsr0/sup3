@@ -77,6 +77,8 @@ pub enum Error {
     Cancelled,
     #[error("no such remote file: {0}")]
     NoSuchKey(Uri),
+    #[error("io: {0}")]
+    Io(std::io::Error),
 }
 
 impl Error {
@@ -221,19 +223,12 @@ impl Client {
     }
     pub async fn get(&self, verbose: bool, from: &Uri, to: &Target, progress_fn: cli::ProgressFn, cancel: CancellationToken) -> Result<PathBuf, Error> {
         progress_fn(cli::Update::State("connecting"));
-        let response = self.client.get_object()
+        let mut response = self.client.get_object()
             .bucket(from.bucket.clone())
             .key(from.key.to_string())
             .send()
-            .await;
-
-        if let Err(aws_sdk_s3::types::SdkError::ServiceError{err, ..}) = &response {
-            if err.is_no_such_key() {
-                return Err(Error::NoSuchKey(from.clone()));
-            }
-        }
-
-        let mut response = response.map_err(|e| -> aws_sdk_s3::Error { e.into() } )?;
+            .await
+            .map_err(|e| error_from_get(from, e))?;
 
         progress_fn(cli::Update::State("opening"));
         let local_path = to.local_path(from)?;
@@ -340,6 +335,31 @@ impl Client {
 
         Ok(())
     }
+    pub async fn cat(&self, uri: &Uri) -> Result<(), Error> {
+        let response = self.client.get_object()
+            .bucket(uri.bucket.clone())
+            .key(uri.key.to_string())
+            .send()
+            .await
+            .map_err(|e| error_from_get(uri, e))?;
+
+        let mut stdout = tokio::io::stdout();
+        let mut body = response.body.into_async_read();
+        tokio::io::copy(&mut body, &mut stdout)
+            .await
+            .map(|_| ())
+            .map_err(|e| Error::Io(e))
+    }
+}
+
+fn error_from_get(uri: &Uri, sdk: aws_sdk_s3::types::SdkError<aws_sdk_s3::error::GetObjectError>) -> Error {
+    if let aws_sdk_s3::types::SdkError::ServiceError{ref err, ..} = sdk {
+        if err.is_no_such_key() {
+            return Error::NoSuchKey(uri.clone());
+        }
+    }
+
+    Error::S3(sdk.into())
 }
 
 const DATE_LEN: usize = "2022-01-01T00:00:00Z".len();

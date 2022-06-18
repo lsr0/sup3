@@ -43,6 +43,8 @@ enum Commands {
     ListBuckets(ListBuckets),
     /// Copy to/from S3, depending on arguments
     Cp(Copy),
+    /// Print contents of S3 files
+    Cat(Cat),
 }
 
 #[derive(Args, Debug)]
@@ -102,6 +104,13 @@ struct Copy {
 
     #[clap(long, short = 'r')]
     recursive: bool,
+}
+
+#[derive(Args, Debug)]
+struct Cat {
+    /// S3 URIs in s3://bucket/path/components format
+    #[clap(required = true)]
+    uris: Vec<s3::Uri>,
 }
 
 pub enum MainResult {
@@ -233,6 +242,21 @@ impl Copy {
     }
 }
 
+impl Cat {
+    async fn run(&self, client: &s3::Client, opts: &SharedOptions) -> MainResult {
+        for uri in &self.uris {
+            if opts.verbose {
+                eprintln!("🏁 cat '{uri}'");
+            }
+            if let Err(e) = client.cat(uri).await {
+                cli::println_error(format_args!("failed to cat {uri}: {e}"));
+                return MainResult::ErrorSomeOperationsFailed;
+            }
+        }
+        MainResult::Success
+    }
+}
+
 #[tokio::main]
 async fn main() -> MainResult {
     let args = Arguments::parse();
@@ -246,6 +270,7 @@ async fn main() -> MainResult {
         Commands::Ls(list) => list.run(&client, &args.shared).await,
         Commands::ListBuckets(list_buckets) => list_buckets.run(&client, &args.shared).await,
         Commands::Cp(copy) => copy.run(&client, &args.shared).await,
+        Commands::Cat(cat) => cat.run(&client, &args.shared).await,
     };
     exit_code
 }

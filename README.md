@@ -39,6 +39,6 @@ Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/aw
 * List (`ls`) (`1..N` S3 URIs)
 * [x] List Buckets (`list-buckets`|`lb`)
 * [x] Copy (`cp`)
-* [ ] Cat (S3 URIs)
+* [x] Cat (S3 URIs)
 * [ ] Touch (S3 URIs)
 

@@ -36,6 +36,11 @@ fn stderr_println(prefix: &impl std::fmt::Display, args: std::fmt::Arguments) {
     eprintln!("{prefix}{args}");
 }
 
+/// Use only if no Output extant
+pub fn println_error(args: std::fmt::Arguments) {
+    stderr_println(&PREFIX_ERROR, args)
+}
+
 #[cfg(feature = "progress")]
 mod progress_enabled {
     use std::sync::Arc;
