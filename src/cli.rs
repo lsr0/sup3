@@ -91,7 +91,7 @@ mod progress_enabled {
 
             self.add_bar(Bar {
                 weak: bar.clone(),
-                name: name.clone(),
+                name,
             });
 
             Arc::new(move |update: Update| {

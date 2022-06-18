@@ -215,7 +215,7 @@ impl Client {
                 tokio::fs::create_dir(&child_path).await
                     .or_else(|err| if err.kind() == AlreadyExists { Ok(()) } else { Err(err) })?;
                 let target = Target::Directory(child_path);
-                return Ok(GetRecursiveResult::Many{bucket: from.bucket.clone(), keys: recursive_files, target});
+                Ok(GetRecursiveResult::Many{bucket: from.bucket.clone(), keys: recursive_files, target})
             },
             Ok(path) => Ok(GetRecursiveResult::One(path)),
             Err(err) => Err(err),
@@ -260,7 +260,7 @@ impl Client {
             .flat_map(|f| f.key) {
             ret.push(Key::new(key));
         }
-        if ret.len() == 0 {
+        if ret.is_empty() {
             return Err(Error::NoSuchKey(s3_uri.clone()));
         }
         Ok(ret)
@@ -364,7 +364,7 @@ impl Client {
         tokio::io::copy(&mut body, &mut stdout)
             .await
             .map(|_| ())
-            .map_err(|e| Error::Io(e))
+            .map_err(Error::Io)
     }
 }
 

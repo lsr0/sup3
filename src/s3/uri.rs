@@ -50,7 +50,7 @@ impl std::str::FromStr for Uri {
 
 pub fn filename(key: &str) -> Option<&str> {
     match key.rsplit_once('/') {
-        None if !key.is_empty() => Some(&key),
+        None if !key.is_empty() => Some(key),
         None => None,
         Some((_, "")) => None,
         Some((_, filename)) => Some(filename),

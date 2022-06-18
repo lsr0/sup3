@@ -60,7 +60,7 @@ pub async fn upload(local_paths: &[std::path::PathBuf], to: &s3::Uri, client: &s
         let filename = path.file_name().as_ref().unwrap_or(&path.as_ref()).to_string_lossy().to_string();
         let update_fn = progress.add("initialising", filename);
         let update_fn_for_error = update_fn.clone();
-        let fut = client.put(verbose, path, &to, update_fn)
+        let fut = client.put(verbose, path, to, update_fn)
             .inspect_err(move |e| update_fn_for_error(cli::Update::Error(e.to_string())))
             .map_err(|e| (e, path.clone()))
             .inspect_ok(report_success);
@@ -139,7 +139,7 @@ pub async fn download(uris: &[s3::Uri], to: &std::path::PathBuf, client: &s3::Cl
         ctrlc_cancel.cancel();
     });
 
-    let target = match s3::Target::new_create(&uris, &to) {
+    let target = match s3::Target::new_create(uris, to) {
         Ok(i) => i,
         Err(err) => {
             progress.println_error(format_args!("{err}"));

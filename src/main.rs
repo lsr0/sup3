@@ -132,10 +132,10 @@ impl MainResult {
 impl std::process::Termination for MainResult {
     fn report(self) -> std::process::ExitCode {
         match self {
-            Self::Success => return std::process::ExitCode::SUCCESS,
-            Self::ErrorArguments => return std::process::ExitCode::from(1),
-            Self::ErrorSomeOperationsFailed => return std::process::ExitCode::from(2),
-            Self::Cancelled => return std::process::ExitCode::from(3),
+            Self::Success => std::process::ExitCode::SUCCESS,
+            Self::ErrorArguments => std::process::ExitCode::from(1),
+            Self::ErrorSomeOperationsFailed => std::process::ExitCode::from(2),
+            Self::Cancelled => std::process::ExitCode::from(3),
         }
     }
 }
@@ -155,7 +155,7 @@ impl Download {
 impl Remove {
     async fn run(&self, client: &s3::Client, opts: &SharedOptions) -> MainResult {
         for uri in &self.remote_paths {
-            if let Err(e) = client.remove(opts, &uri).await {
+            if let Err(e) = client.remove(opts, uri).await {
                 eprintln!("❌: failed to remove {}: {e}", uri);
                 return MainResult::ErrorSomeOperationsFailed;
             }
@@ -200,7 +200,7 @@ impl TryFrom<&std::ffi::OsStr> for CopyArgument {
             match unicode.parse() {
                 Ok(uri) => return Ok(CopyArgument::Uri(uri)),
                 Err(s3::UriError::ParseError{..}) => {},
-                Err(other @ _) => return Err(format!("{other}")),
+                Err(other) => return Err(format!("{other}")),
             }
         }
         Ok(CopyArgument::LocalFile(std::path::PathBuf::from(arg)))
@@ -214,7 +214,7 @@ impl Copy {
             let _ = Arguments::command()
                 .error(clap::ErrorKind::ArgumentConflict, "cp requires either <S3 URI..> <local path> or <local path..> <S3 URI>")
                 .print();
-            return MainResult::ErrorArguments;
+            MainResult::ErrorArguments
         };
         match &self.args[..] {
             [from @ .., CopyArgument::LocalFile(to)] => {
@@ -225,7 +225,7 @@ impl Copy {
                         CopyArgument::LocalFile(_) => return invalid_args(),
                     }
                 }
-                transfer::download(&uris, &to, client, opts, &self.transfer, self.recursive).await
+                transfer::download(&uris, to, client, opts, &self.transfer, self.recursive).await
             },
             [from @ .., CopyArgument::Uri(to)] => {
                 let mut paths = vec![];
@@ -235,9 +235,9 @@ impl Copy {
                         CopyArgument::Uri(_) => return invalid_args(),
                     }
                 }
-                transfer::upload(&paths, &to, client, opts, &self.transfer).await
+                transfer::upload(&paths, to, client, opts, &self.transfer).await
             },
-            _ => return invalid_args(),
+            _ => invalid_args(),
         }
     }
 }
