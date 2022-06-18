@@ -29,7 +29,7 @@ jobs:
         with:
           use-cross: ${{ matrix.cross_arch_long != '' }}
           command: install
-          args: --profile release-small --path . --root artifacts ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
+          args: --profile release-small --path . --root artifacts ${{ matrix.cross_arch_long && format('--target {0}', matrix.cross_arch_long) || '' }}
 
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v2
