@@ -85,16 +85,13 @@ pub async fn upload(local_paths: &[std::path::PathBuf], to: &s3::Uri, client: &s
 }
 
 #[async_recursion::async_recursion]
-async fn download_recursive_one(uri: s3::Uri, target: s3::Target, recursive: bool, progress: Arc<cli::Output>, client: s3::Client, verbose: bool, semaphore: Arc<tokio::sync::Semaphore>, options: OptionsTransfer, cancel: tokio_util::sync::CancellationToken) -> u32 {
-    if cancel.is_cancelled() {
-        return 1;
-    }
+async fn download_recursive_one(uri: s3::Uri, target: s3::Target, recursive: bool, progress: Arc<cli::Output>, client: s3::Client, verbose: bool, semaphore: Arc<tokio::sync::Semaphore>, options: OptionsTransfer) -> u32 {
     let token = semaphore.clone().acquire_owned().await.unwrap();
     let filename = uri.filename().unwrap_or(uri.key.as_str()).to_owned();
     let update_fn = progress.add("initialising", filename);
     let update_fn_for_error = update_fn.clone();
     let mut error_count = 0;
-    let fut = client.get_recursive(verbose, recursive, uri.clone(), target.clone(), update_fn, cancel.clone())
+    let fut = client.get_recursive(verbose, recursive, uri.clone(), target.clone(), update_fn)
         .inspect_err(move |e| update_fn_for_error(cli::Update::Error(e.to_string())))
         .map(|res| (res, token));
     let (res, ..) = fut.await;
@@ -106,7 +103,7 @@ async fn download_recursive_one(uri: s3::Uri, target: s3::Target, recursive: boo
             let mut handles = Vec::new();
             for key in keys {
                 let key = key.clone();
-                let fut = download_recursive_one(s3::Uri::new(bucket.clone(), key), target.clone(), recursive, progress.clone(), client.clone(), verbose, semaphore.clone(), options.clone(), cancel.clone());
+                let fut = download_recursive_one(s3::Uri::new(bucket.clone(), key), target.clone(), recursive, progress.clone(), client.clone(), verbose, semaphore.clone(), options.clone());
                 handles.push(fut);
             }
             let results = futures::future::join_all(handles).await;
@@ -116,9 +113,6 @@ async fn download_recursive_one(uri: s3::Uri, target: s3::Target, recursive: boo
         Err(err) => {
             if !progress.progress_enabled() {
                 progress.println_error(format_args!("failed to download {uri}: {err}"));
-            }
-            if !options.continue_on_error || err.should_cancel_other_operations() {
-                cancel.cancel();
             }
             error_count += 1;
         }
@@ -150,7 +144,7 @@ pub async fn download(uris: &[s3::Uri], to: &std::path::PathBuf, client: &s3::Cl
     let mut handles = Vec::new();
 
     for uri in uris.iter() {
-        let fut = download_recursive_one(uri.clone(), target.clone(), recursive, progress.clone(), client.clone(), verbose, semaphore.clone(), transfer.clone(), cancellation.clone());
+        let fut = download_recursive_one(uri.clone(), target.clone(), recursive, progress.clone(), client.clone(), verbose, semaphore.clone(), transfer.clone());
         handles.push(fut);
 
         if cancellation.is_cancelled() {

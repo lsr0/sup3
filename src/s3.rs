@@ -6,7 +6,6 @@ use aws_sdk_s3::{types::ByteStream, output::ListObjectsV2Output};
 use futures::stream::Stream;
 use futures::TryStreamExt;
 use tokio::io::AsyncWriteExt;
-use tokio_util::sync::CancellationToken;
 
 use crate::shared_options::SharedOptions;
 use crate::cli;
@@ -73,18 +72,10 @@ pub enum Error {
     LocalFile(#[from] std::io::Error),
     #[error("streaming: {0}")]
     Streaming(#[from] aws_smithy_http::byte_stream::Error),
-    #[error("cancelled")]
-    Cancelled,
     #[error("no such remote file: {0}")]
     NoSuchKey(Uri),
     #[error("io: {0}")]
     Io(std::io::Error),
-}
-
-impl Error {
-    pub fn should_cancel_other_operations(&self) -> bool {
-        matches!(self, Self::Cancelled)
-    }
 }
 
 #[derive(Clone)]
@@ -148,13 +139,12 @@ impl Target {
     }
 }
 
-async fn get_write_loop(local_file: &mut partial_file::PartialFile, mut body: aws_smithy_http::byte_stream::ByteStream, cancel: CancellationToken) -> Result<(), Error> {
+async fn get_write_loop(local_file: &mut partial_file::PartialFile, mut body: aws_smithy_http::byte_stream::ByteStream) -> Result<(), Error> {
     loop {
         let next_block = body.try_next();
         match next_block.await {
             Ok(Some(bytes)) => local_file.writer().write_all(&bytes).await?,
             Ok(None) => break,
-            Err(_) if cancel.is_cancelled() => return Err(Error::Cancelled),
             Err(e) => return Err(e.into()),
         };
     }
@@ -204,8 +194,8 @@ impl Client {
         progress_fn(cli::Update::Finished());
         Ok(destination)
     }
-    pub async fn get_recursive(&self, verbose: bool, recursive: bool, from: Uri, to: Target, progress_fn: cli::ProgressFn, cancel: CancellationToken) -> Result<GetRecursiveResult, Error> {
-        match self.get(verbose, &from, &to, progress_fn.clone(), cancel).await {
+    pub async fn get_recursive(&self, verbose: bool, recursive: bool, from: Uri, to: Target, progress_fn: cli::ProgressFn) -> Result<GetRecursiveResult, Error> {
+        match self.get(verbose, &from, &to, progress_fn.clone()).await {
             Err(Error::NoSuchKey(uri)) if recursive => {
                 let recursive_files = self.get_recursive_list(&uri).await?;
                 progress_fn(cli::Update::FinishedHide());
@@ -221,7 +211,7 @@ impl Client {
             Err(err) => Err(err),
         }
     }
-    pub async fn get(&self, verbose: bool, from: &Uri, to: &Target, progress_fn: cli::ProgressFn, cancel: CancellationToken) -> Result<PathBuf, Error> {
+    pub async fn get(&self, verbose: bool, from: &Uri, to: &Target, progress_fn: cli::ProgressFn) -> Result<PathBuf, Error> {
         progress_fn(cli::Update::State("connecting"));
         let mut response = self.client.get_object()
             .bucket(from.bucket.clone())
@@ -240,7 +230,7 @@ impl Client {
             println!("🏁 downloading '{from}' [{size} bytes] to {path_printable}", size = response.content_length(), path_printable = local_file.path_printable());
         }
         response.body.with_body_callback(ProgressCallback::wrap(progress_fn.clone()));
-        let local_path = match get_write_loop(&mut local_file, response.body, cancel).await {
+        let local_path = match get_write_loop(&mut local_file, response.body).await {
             Ok(_) => local_file.finished().await?,
             Err(err) => {
                 local_file.cancelled().await?;
