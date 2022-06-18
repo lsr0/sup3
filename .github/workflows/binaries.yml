@@ -31,8 +31,8 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           use-cross: ${{ matrix.cross_arch_long != '' && !contains(matrix.cross_arch_long, 'apple') }}
-          command: install
-          args: --profile release-small --path . --root artifacts ${{ matrix.cross_arch_long && format('--target {0}', matrix.cross_arch_long) || '' }}
+          command: build
+          args: --profile release-small --out-dir=artifacts -Zunstable-options ${{ matrix.cross_arch_long && format('--target {0}', matrix.cross_arch_long) || '' }}
 
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v2
