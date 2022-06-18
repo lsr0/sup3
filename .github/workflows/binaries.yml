@@ -27,7 +27,7 @@ jobs:
 
       - uses: actions-rs/cargo@v1
         with:
-          use-cross: true
+          use-cross: ${{ matrix.cross_arch_long != '' }}
           command: install
           args: --profile release-small --path . --root artifacts ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
 
