@@ -14,6 +14,9 @@ jobs:
           - os: ubuntu-latest
             cross_arch_long: aarch64-unknown-linux-gnu
             cross_arch: aarch64
+          - os: macos-latest
+            cross_arch_long: aarch64-apple-darwin
+            cross_arch: aarch64
     runs-on: ${{ matrix.os }}
     steps:
       - name: 'Checkout'
@@ -27,7 +30,7 @@ jobs:
 
       - uses: actions-rs/cargo@v1
         with:
-          use-cross: ${{ matrix.cross_arch_long != '' }}
+          use-cross: ${{ matrix.cross_arch_long != '' && !contains(matrix.cross_arch_long, 'apple') }}
           command: install
           args: --profile release-small --path . --root artifacts ${{ matrix.cross_arch_long && format('--target {0}', matrix.cross_arch_long) || '' }}
 
