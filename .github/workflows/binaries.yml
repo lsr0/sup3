@@ -9,6 +9,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        cross_arch_long: ['']
         include:
           - os: ubuntu-latest
             cross_arch_long: aarch64-unknown-linux-gnu
@@ -24,17 +25,11 @@ jobs:
           toolchain: stable
           target: ${{ matrix.cross_arch_long }}
 
-      - name: 'Set Cross-Compilation Target'
-        if: matrix.cross_arch_long != ''
-        run: |
-          echo "CARGO_BUILD_TARGET=${{ matrix.cross_arch_long }}" >> $GITHUB_ENV
-          echo "RUST_FLAGS=${{ matrix.cross_arch_long }}" >> $GITHUB_ENV
-
       - uses: actions-rs/cargo@v1
         with:
           use-cross: true
           command: install
-          args: --profile release-small --path . --root artifacts ${{ matrix.target && format('--release {0}', matrix.target) || '' }}
+          args: --profile release-small --path . --root artifacts ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
 
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v2
