@@ -58,6 +58,8 @@ jobs:
           chmod +x -R job_artifacts/*/sup3
           tar cfz release/sup3-macos-x64_64-$GITHUB_REF_NAME.tar.gz -C job_artifacts/sup3-macOS-X64 sup3
           tar cfz release/sup3-linux-x64_64-$GITHUB_REF_NAME.tar.gz -C job_artifacts/sup3-Linux-X64 sup3
+          tar cfz release/sup3-macos-aarch64-$GITHUB_REF_NAME.tar.gz -C job_artifacts/sup3-macOS-aarch64 sup3
+          tar cfz release/sup3-linux-aarch64-$GITHUB_REF_NAME.tar.gz -C job_artifacts/sup3-Linux-aarch64 sup3
           zip release/sup3-windows-x64_64-$GITHUB_REF_NAME.zip job_artifacts/sup3-Windows-X64/sup3.exe --junk-paths
 
       - name: Release
