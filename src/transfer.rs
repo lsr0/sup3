@@ -38,6 +38,7 @@ pub async fn upload(local_paths: &[std::path::PathBuf], to: &s3::Uri, client: &s
     let concurrency = transfer.concurrency.unwrap_or(1);
 
     let progress = cli::Output::new(&transfer.progress);
+    progress.add_incoming_tasks(local_paths.len());
 
     let mut report_error = |path: &std::path::Path, e| {
         if !progress.progress_enabled() {
@@ -101,6 +102,7 @@ async fn download_recursive_one(uri: s3::Uri, target: s3::Target, recursive: boo
         },
         Ok(s3::GetRecursiveResult::Many{bucket, keys, target}) => {
             let mut handles = Vec::new();
+            progress.add_incoming_tasks(keys.len());
             for key in keys {
                 let key = key.clone();
                 let fut = download_recursive_one(s3::Uri::new(bucket.clone(), key), target.clone(), recursive, progress.clone(), client.clone(), verbose, semaphore.clone(), options.clone());
@@ -122,6 +124,7 @@ async fn download_recursive_one(uri: s3::Uri, target: s3::Target, recursive: boo
 
 pub async fn download(uris: &[s3::Uri], to: &std::path::PathBuf, client: &s3::Client, opts: &SharedOptions, transfer: &OptionsTransfer, recursive: bool) -> MainResult {
     let progress = Arc::new(cli::Output::new(&transfer.progress));
+    progress.add_incoming_tasks(uris.len());
     let verbose = opts.verbose && !progress.progress_enabled();
 
     let semaphore = Arc::new(tokio::sync::Semaphore::new(transfer.concurrency.unwrap_or(1) as usize));

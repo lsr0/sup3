@@ -54,10 +54,15 @@ mod progress_enabled {
         bar: indicatif::ProgressBar,
         name: String,
     }
+    #[derive (Default)]
+    pub struct Bars {
+        bars: Vec<Bar>,
+        incoming_task_count: usize,
+    }
     pub struct Output {
         enabled: bool,
         multi: indicatif::MultiProgress,
-        bars: std::sync::Mutex<Vec<Bar>>,
+        bars: std::sync::Mutex<Bars>,
     }
     impl Output {
         pub fn new(args: &ArgProgress) -> Output {
@@ -105,26 +110,42 @@ mod progress_enabled {
                 }
             })
         }
+        pub fn add_incoming_tasks(&self, count: usize) {
+            if !self.enabled {
+                return
+            }
+            let mut bars = self.bars.lock().unwrap();
+            bars.incoming_task_count += count;
+            self.update_bars(bars);
+        }
         fn add_bar(&self, added: Bar) {
             let mut bars = self.bars.lock().unwrap();
-            bars.push(added);
-            if bars.len() == 1 {
-                let added = bars.get(0).expect("just added");
+            bars.bars.push(added);
+            if bars.incoming_task_count > 0 {
+                bars.incoming_task_count -= 1;
+            }
+            let task_count = bars.bars.len() + bars.incoming_task_count;
+            if task_count == 1 {
+                let added = bars.bars.get(0).expect("just added");
                 added.bar.set_prefix(added.name.clone());
             } else {
-                let name_len = bars.iter().map(|bar| bar.name.len()).max().unwrap_or(0);
-                let mut index = 0;
-                for bar in bars.iter() {
-                    if bar.bar.is_hidden() {
-                        continue;
-                    }
-                    let digits = digit_count(bars.len() as u64);
-                    let grey = console::Style::new().color256(252);
-                    let lb = grey.apply_to("(");
-                    let rb = grey.apply_to(")");
-                    bar.bar.set_prefix(format!("{lb}{:digits$}/{}{rb} {name:name_len$}", index + 1, bars.len(), name = bar.name));
-                    index += 1;
+                self.update_bars(bars);
+            }
+        }
+        fn update_bars(&self, bars: std::sync::MutexGuard<Bars>) {
+            let task_count = bars.bars.len() + bars.incoming_task_count;
+            let name_len = bars.bars.iter().map(|bar| bar.name.len()).max().unwrap_or(0);
+            let mut index = 0;
+            for bar in bars.bars.iter() {
+                if bar.bar.is_hidden() {
+                    continue;
                 }
+                let digits = digit_count(task_count as u64);
+                let grey = console::Style::new().color256(252);
+                let lb = grey.apply_to("(");
+                let rb = grey.apply_to(")");
+                bar.bar.set_prefix(format!("{lb}{:digits$}/{}{rb} {name:name_len$}", index + 1, task_count, name = bar.name));
+                index += 1;
             }
         }
         pub fn println(&self, prefix: &impl std::fmt::Display, args: std::fmt::Arguments) {
@@ -145,7 +166,7 @@ mod progress_enabled {
                 return;
             }
             let bars = self.bars.lock().unwrap();
-            for bar in bars.iter() {
+            for bar in bars.bars.iter() {
                 if bar.bar.is_hidden() || bar.bar.is_finished() {
                     continue;
                 }
@@ -179,6 +200,8 @@ mod progress_disabled {
         }
         pub fn add(&self, _index: usize, _initial_state: impl Into<String>, _name: String) -> ProgressFn {
             empty_progress_fn
+        }
+        pub fn add_incoming_tasks(&self, _count: usize) {
         }
         pub fn println_error(&self, args: std::fmt::Arguments) {
             stderr_println(&PREFIX_ERROR, args);
