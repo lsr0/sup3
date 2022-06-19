@@ -51,7 +51,7 @@ mod progress_enabled {
     pub const PREFIX_DONE: console::Emoji = console::Emoji("✅ ", "");
 
     pub struct Bar {
-        weak: indicatif::ProgressBar,
+        bar: indicatif::ProgressBar,
         name: String,
     }
     pub struct Output {
@@ -90,7 +90,7 @@ mod progress_enabled {
             let bar = self.multi.add(bar);
 
             self.add_bar(Bar {
-                weak: bar.clone(),
+                bar: bar.clone(),
                 name,
             });
 
@@ -110,19 +110,19 @@ mod progress_enabled {
             bars.push(added);
             if bars.len() == 1 {
                 let added = bars.get(0).expect("just added");
-                added.weak.set_prefix(added.name.clone());
+                added.bar.set_prefix(added.name.clone());
             } else {
                 let name_len = bars.iter().map(|bar| bar.name.len()).max().unwrap_or(0);
                 let mut index = 0;
                 for bar in bars.iter() {
-                    if bar.weak.is_hidden() {
+                    if bar.bar.is_hidden() {
                         continue;
                     }
                     let digits = digit_count(bars.len() as u64);
                     let grey = console::Style::new().color256(252);
                     let lb = grey.apply_to("(");
                     let rb = grey.apply_to(")");
-                    bar.weak.set_prefix(format!("{lb}{:digits$}/{}{rb} {name:name_len$}", index + 1, bars.len(), name = bar.name));
+                    bar.bar.set_prefix(format!("{lb}{:digits$}/{}{rb} {name:name_len$}", index + 1, bars.len(), name = bar.name));
                     index += 1;
                 }
             }
@@ -146,10 +146,10 @@ mod progress_enabled {
             }
             let bars = self.bars.lock().unwrap();
             for bar in bars.iter() {
-                if bar.weak.is_hidden() || bar.weak.is_finished() {
+                if bar.bar.is_hidden() || bar.bar.is_finished() {
                     continue;
                 }
-                bar.weak.abandon_with_message(format!("{PREFIX_ERROR}cancelled"));
+                bar.bar.abandon_with_message(format!("{PREFIX_ERROR}cancelled"));
             }
         }
     }
