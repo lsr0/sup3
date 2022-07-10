@@ -1,10 +1,10 @@
-use futures::{stream, future};
+use futures::future;
 
-use stream::futures_unordered::FuturesUnordered;
-use stream::StreamExt;
 use futures::FutureExt;
 use future::TryFutureExt;
 use std::sync::Arc;
+use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 
 use crate::s3;
 use crate::cli;
@@ -32,57 +32,140 @@ fn flag_concurrency_in_range(s: &str) -> Result<u16, String> {
     }
 }
 
-
-pub async fn upload(local_paths: &[std::path::PathBuf], to: &s3::Uri, client: &s3::Client, opts: &SharedOptions, transfer: &OptionsTransfer) -> MainResult {
-    let mut error_count = 0;
-    let concurrency = transfer.concurrency.unwrap_or(1);
-
-    let progress = cli::Output::new(&transfer.progress);
+pub async fn upload(local_paths: &[std::path::PathBuf], to: &s3::Uri, client: &s3::Client, opts: &SharedOptions, transfer: &OptionsTransfer, recursive: bool) -> MainResult {
+    let progress = Arc::new(cli::Output::new(&transfer.progress, opts.verbose));
     progress.add_incoming_tasks(local_paths.len());
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(transfer.concurrency.unwrap_or(1) as usize));
 
-    let mut report_error = |path: &std::path::Path, e| {
-        if !progress.progress_enabled() {
-            progress.println_error(format_args!("failed to upload {path:?}: {e}"));
-        }
-        error_count += 1;
-    };
-
-    let report_success = |uri: &String| {
-        if opts.verbose && concurrency > 0 && !progress.progress_enabled() {
-            progress.println_done(format_args!("uploaded {uri}"));
-        }
-    };
+    let cancellation = tokio_util::sync::CancellationToken::new();
+    let ctrlc_cancel = cancellation.clone();
+    tokio::spawn(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        ctrlc_cancel.cancel();
+    });
 
     let verbose = opts.verbose && !progress.progress_enabled();
 
-    let mut started_futures = FuturesUnordered::new();
+    let mut futures = FuturesUnordered::new();
 
-    for path in local_paths.iter() {
-        let filename = path.file_name().as_ref().unwrap_or(&path.as_ref()).to_string_lossy().to_string();
-        let update_fn = progress.add("initialising", filename);
-        let update_fn_for_error = update_fn.clone();
-        let fut = client.put(verbose, path, to, update_fn)
-            .inspect_err(move |e| update_fn_for_error(cli::Update::Error(e.to_string())))
-            .map_err(|e| (e, path.clone()))
-            .inspect_ok(report_success);
-        started_futures.push(fut);
+    for path in local_paths.into_iter() {
+        let fut = upload_recursive_one(path.to_owned(), to, recursive, progress.clone(), client.clone(), verbose, semaphore.clone(), transfer.clone());
+        futures.push(fut);
 
-        if started_futures.len() >= concurrency.into() {
-            if let Err((e, path)) = started_futures.next().await.expect("at least one future") {
-                report_error(&path, e);
-                if !transfer.continue_on_error {
-                    break;
-                }
-            }
-        }
-    }
-    while let Some(res) = started_futures.next().await {
-        if let Err((e, path)) = res {
-            report_error(&path, e);
+        if cancellation.is_cancelled() {
+            break;
         }
     }
 
+    let mut error_count = 0;
+    loop {
+        let result = tokio::select!{
+            res = &mut futures.next() => res,
+            _ = cancellation.cancelled() => {
+                progress.mark_cancelled();
+                return MainResult::Cancelled;
+            },
+        };
+        match result {
+            Some(count) => error_count += count,
+            None => break,
+        }
+        if error_count > 0 && !transfer.continue_on_error {
+            break;
+        }
+    }
     MainResult::from_error_count(error_count)
+}
+
+async fn upload_single(path: &std::path::PathBuf, to: &s3::Uri, progress: Arc<cli::Output>, update_fn: cli::ProgressFn, client: s3::Client, verbose: bool, _permit: tokio::sync::OwnedSemaphorePermit) -> u32 {
+    let update_fn_for_error = update_fn.clone();
+    match client.put(verbose, path, to, update_fn).await {
+        Ok(uri) => {
+            progress.println_done_verbose(format_args!("uploaded {uri}"));
+            0
+        },
+        Err(e) => {
+            progress.println_error_noprogress(format_args!("failed to upload {path:?} to {to}: {e}"));
+            update_fn_for_error(cli::Update::Error(e.to_string()));
+            1
+        }
+    }
+}
+
+#[async_recursion::async_recursion]
+async fn upload_recursive_one(path: std::path::PathBuf, to: &s3::Uri, recursive: bool, progress: Arc<cli::Output>, client: s3::Client, verbose: bool, semaphore: Arc<tokio::sync::Semaphore>, options: OptionsTransfer) -> u32 {
+    let token = semaphore.clone().acquire_owned().await.unwrap();
+
+    let filename = path.to_string_lossy().to_string();
+    let update_fn = progress.add("statting", filename);
+
+    let metadata = match tokio::fs::metadata(&path).await {
+        Ok(m) => m,
+        Err(e) => {
+            progress.println_error_noprogress(format_args!("failed to access local path {path:?}: {e}"));
+            update_fn(cli::Update::Error(e.to_string()));
+            return 1;
+        },
+    };
+
+    if !metadata.is_dir() {
+        return upload_single(&path, to, progress, update_fn, client, verbose, token).await;
+    }
+    if !recursive {
+        progress.println_error_noprogress(format_args!("given directory {path:?} in non-recursive mode"));
+        update_fn(cli::Update::Error("given directory in non-recursive mode".into()));
+        return 1;
+    }
+    drop(token);
+    update_fn(cli::Update::State("listing"));
+
+    let extra_path_component = path.file_name().unwrap_or(std::ffi::OsStr::new(""));
+    let extra_path_component_utf = match extra_path_component.to_str() {
+        None => {
+            progress.println_error_noprogress(format_args!("directory child not unicode {extra_path_component:?}"));
+            update_fn(cli::Update::Error(format!("directory child not unicode {extra_path_component:?}")));
+            return 1;
+        },
+        Some(p) => p,
+    };
+
+    let to_child = to.child_directory(extra_path_component_utf);
+
+    let mut files = match tokio::fs::read_dir(path).await {
+        Err(e) => { update_fn(cli::Update::Error(e.to_string())); return 1; },
+        Ok(files) => files,
+    };
+
+    let mut futures = FuturesUnordered::new();
+    let mut error_count = 0;
+    loop {
+        let child_file = match files.next_entry().await {
+            Err(e) => {
+                progress.println_error_noprogress(format_args!("failed to list directory: {e}"));
+                update_fn(cli::Update::Error(e.to_string()));
+                // Run all other already pushed futures to completion
+                if !options.continue_on_error {
+                    return 1;
+                }
+                error_count += 1;
+                break;
+            },
+            Ok(Some(file)) => file,
+            Ok(None) => break,
+        };
+        progress.add_incoming_tasks(1);
+
+        futures.push(upload_recursive_one(child_file.path(), &to_child, recursive, progress.clone(), client.clone(), verbose, semaphore.clone(), options.clone()));
+    }
+
+    update_fn(cli::Update::FinishedHide());
+    while let Some(res) = futures.next().await {
+        error_count += res;
+        if error_count > 0 && !options.continue_on_error {
+            return error_count;
+        }
+    }
+    error_count
 }
 
 #[async_recursion::async_recursion]
@@ -98,24 +181,26 @@ async fn download_recursive_one(uri: s3::Uri, target: s3::Target, recursive: boo
     let (res, ..) = fut.await;
     match res {
         Ok(s3::GetRecursiveResult::One(path)) => if verbose && options.concurrency.unwrap_or(1) > 1 && !progress.progress_enabled() {
-            progress.println_done(format_args!("download {path:?}"));
+            progress.println_done_verbose(format_args!("downloaded {path:?}"));
         },
         Ok(s3::GetRecursiveResult::Many{bucket, keys, target}) => {
-            let mut handles = Vec::new();
+            let mut futures = FuturesUnordered::new();
             progress.add_incoming_tasks(keys.len());
             for key in keys {
                 let key = key.clone();
                 let fut = download_recursive_one(s3::Uri::new(bucket.clone(), key), target.clone(), recursive, progress.clone(), client.clone(), verbose, semaphore.clone(), options.clone());
-                handles.push(fut);
+                futures.push(fut);
             }
-            let results = futures::future::join_all(handles).await;
-            error_count += results.into_iter().sum::<u32>();
+            while let Some(res) = futures.next().await {
+                error_count += res;
+                if error_count > 0 && !options.continue_on_error {
+                    return error_count;
+                }
+            }
 
         }
         Err(err) => {
-            if !progress.progress_enabled() {
-                progress.println_error(format_args!("failed to download {uri}: {err}"));
-            }
+            progress.println_error_noprogress(format_args!("failed to download {uri}: {err}"));
             error_count += 1;
         }
     }
@@ -123,7 +208,7 @@ async fn download_recursive_one(uri: s3::Uri, target: s3::Target, recursive: boo
 }
 
 pub async fn download(uris: &[s3::Uri], to: &std::path::PathBuf, client: &s3::Client, opts: &SharedOptions, transfer: &OptionsTransfer, recursive: bool) -> MainResult {
-    let progress = Arc::new(cli::Output::new(&transfer.progress));
+    let progress = Arc::new(cli::Output::new(&transfer.progress, opts.verbose));
     progress.add_incoming_tasks(uris.len());
     let verbose = opts.verbose && !progress.progress_enabled();
 
@@ -139,29 +224,38 @@ pub async fn download(uris: &[s3::Uri], to: &std::path::PathBuf, client: &s3::Cl
     let target = match s3::Target::new_create(uris, to) {
         Ok(i) => i,
         Err(err) => {
-            progress.println_error(format_args!("{err}"));
+            progress.println_error(format_args!("local path {to:?}: {err}"));
             return MainResult::ErrorArguments;
         },
     };
 
-    let mut handles = Vec::new();
+    let mut futures = FuturesUnordered::new();
 
     for uri in uris.iter() {
         let fut = download_recursive_one(uri.clone(), target.clone(), recursive, progress.clone(), client.clone(), verbose, semaphore.clone(), transfer.clone());
-        handles.push(fut);
+        futures.push(fut);
 
         if cancellation.is_cancelled() {
             break;
         }
     }
-    let mut wait_all = futures::future::join_all(handles);
-    let results = tokio::select!{
-        res = &mut wait_all => res,
-        _ = cancellation.cancelled() => {
-            progress.mark_cancelled();
-            return MainResult::Cancelled;
-        },
-    };
-    let error_count = results.into_iter().sum();
+
+    let mut error_count = 0;
+    loop {
+        let result = tokio::select!{
+            res = &mut futures.next() => res,
+            _ = cancellation.cancelled() => {
+                progress.mark_cancelled();
+                return MainResult::Cancelled;
+            },
+        };
+        match result {
+            Some(count) => error_count += count,
+            None => break,
+        }
+        if error_count > 0 && !transfer.continue_on_error {
+            break;
+        }
+    }
     MainResult::from_error_count(error_count)
 }

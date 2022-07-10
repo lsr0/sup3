@@ -56,6 +56,9 @@ struct Upload {
 
     #[clap(flatten)]
     transfer: transfer::OptionsTransfer,
+
+    #[clap(long, short = 'r')]
+    recursive: bool,
 }
 
 #[derive(Args, Debug)]
@@ -142,7 +145,7 @@ impl std::process::Termination for MainResult {
 
 impl Upload {
     async fn run(&self, client: &s3::Client, opts: &SharedOptions) -> MainResult {
-        transfer::upload(&self.local_paths, &self.to, client, opts, &self.transfer).await
+        transfer::upload(&self.local_paths, &self.to, client, opts, &self.transfer, self.recursive).await
     }
 }
 
@@ -235,7 +238,7 @@ impl Copy {
                         CopyArgument::Uri(_) => return invalid_args(),
                     }
                 }
-                transfer::upload(&paths, to, client, opts, &self.transfer).await
+                transfer::upload(&paths, to, client, opts, &self.transfer, self.recursive).await
             },
             _ => invalid_args(),
         }

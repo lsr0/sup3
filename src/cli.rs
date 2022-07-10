@@ -61,11 +61,12 @@ mod progress_enabled {
     }
     pub struct Output {
         enabled: bool,
+        verbose: bool,
         multi: indicatif::MultiProgress,
         bars: std::sync::Mutex<Bars>,
     }
     impl Output {
-        pub fn new(args: &ArgProgress) -> Output {
+        pub fn new(args: &ArgProgress, verbose: bool) -> Output {
             let draw_target = indicatif::ProgressDrawTarget::stderr_with_hz(6);
             let enabled = match args.progress {
                 ProgressOption::On => true,
@@ -76,6 +77,7 @@ mod progress_enabled {
                 enabled: enabled && !draw_target.is_hidden(),
                 multi: indicatif::MultiProgress::with_draw_target(draw_target),
                 bars: Default::default(),
+                verbose,
             }
         }
         pub fn progress_enabled(&self) -> bool {
@@ -83,7 +85,7 @@ mod progress_enabled {
         }
         pub fn add(&self, initial_state: impl Into<String>, name: String) -> ProgressFn {
             if !self.enabled {
-                return Arc::new(|_update: Update| {});
+                return Arc::new(move |_: Update| {});
             }
 
             let bar = indicatif::ProgressBar::new(1)
@@ -133,7 +135,8 @@ mod progress_enabled {
             }
         }
         fn update_bars(&self, bars: std::sync::MutexGuard<Bars>) {
-            let task_count = bars.bars.len() + bars.incoming_task_count;
+            let count_visible = bars.bars.iter().filter(|bar| !bar.bar.is_hidden()).count();
+            let task_count = count_visible + bars.incoming_task_count;
             let name_len = bars.bars.iter().map(|bar| bar.name.len()).max().unwrap_or(0);
             let mut index = 0;
             for bar in bars.bars.iter() {
@@ -158,7 +161,16 @@ mod progress_enabled {
         pub fn println_error(&self, args: std::fmt::Arguments) {
             self.println(&PREFIX_ERROR, args);
         }
-        pub fn println_done(&self, args: std::fmt::Arguments) {
+        pub fn println_error_noprogress(&self, args: std::fmt::Arguments) {
+            if self.enabled {
+                return;
+            }
+            self.println(&PREFIX_ERROR, args);
+        }
+        pub fn println_done_verbose(&self, args: std::fmt::Arguments) {
+            if !self.verbose || self.enabled {
+                return;
+            }
             self.println(&PREFIX_DONE, args);
         }
         pub fn mark_cancelled(&self) {

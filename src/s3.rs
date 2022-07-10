@@ -113,7 +113,7 @@ impl Target {
             Ok(_) => Ok(Target::File(to.clone())),
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
                 if uris.len() > 1 {
-                    std::fs::create_dir(to).map_err(|e| e.to_string())?;
+                    std::fs::create_dir(to).map_err(|e| format!("failed to create directory: {e}"))?;
                     Ok(Target::Directory(to.clone()))
                 } else {
                     Ok(Target::File(to.clone()))

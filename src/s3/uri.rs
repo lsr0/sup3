@@ -112,6 +112,14 @@ impl Uri {
     pub fn filename(&self) -> Option<&str> {
         self.key.filename()
     }
+    pub fn child_directory(&self, path_component: &str) -> Uri {
+        let mut child_key = self.key.clone();
+        child_key.push(path_component);
+        Uri {
+            bucket: self.bucket.clone(),
+            key: child_key.to_explicit_directory(),
+        }
+    }
 }
 
 impl std::fmt::Display for Uri {
