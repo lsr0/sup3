@@ -48,3 +48,25 @@ Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/aw
 * [x] Cat (S3 URIs)
 * [ ] Touch (S3 URIs)
 
+## Speed
+
+Meaurements performed on an i7-7700HQ, with an approximately 50ms RTT to the S3 server.
+
+### Download - 20MiB file
+| Command | Mean [s] | Min [s] | Max [s] | Relative | CPU User [s] | CPU System [s] | CPU Relative |
+|:---|---:|---:|---:|---:|---:|---:|---:|
+| `sup3 cp s3://bucket/file dir/` | 1.306 ± 0.047 | 1.249 | 1.416 | 1.00 | 0.095 | 0.153 | 100% |
+| `aws s3 cp s3://bucket/file dir/` | 1.855 ± 0.106 | 1.724 | 2.044 | **142% ± 10%** | 0.565 | 0.122 | **277%** |
+
+### Download - 224byte file
+| Command | Mean [s] | Min [s] | Max [s] | Relative | CPU User [s] | CPU System [s] | CPU Relative |
+|:---|---:|---:|---:|---:|---:|---:|---:|
+| `sup3 cp s3://bucket/file dir/` | 0.246 ± 0.006 | 0.234 | 0.255 | 100% | 0.004 | 0.007 | 100% |
+| `aws s3 cp s3://bucket/file dir/` | 0.910 ± 0.013 | 0.892 | 0.937 | **370% ± 11%** | 0.394 | 0.050 | **4036%** |
+
+### ls - 63,186 files from bucket by substring
+| Command | Mean [s] | Min [s] | Max [s] | Relative | CPU User [s] | CPU System [s] | CPU Relative |
+|:---|---:|---:|---:|---:|---:|---:|---:|
+| `sup3 ls --substring s3://bucket/substring >/dev/null` | 10.053 ± 0.694 | 9.253 | 10.487 | 100% | 0.485 | 0.141 | 100% |
+| `aws s3 ls s3://bucket/substring >/dev/null` | 22.050 ± 3.809 | 19.643 | 26.441 | **219% ± 41%** | 11.772 | 0.143 | **1900%**
+
