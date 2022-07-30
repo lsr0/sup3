@@ -26,7 +26,7 @@ Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/aw
 * No runtime non-platform dependencies (e.g. `libc`, `libm`, `libgcc_s`)
 * [x] Concurrent transfers
 * [x] Optional progress reporting
-* [ ] Recursive upload support
+* [x] Recursive upload support
 * [x] Recursive download support
 * [ ] Remote globbing (e.g. `sup3 ls s3://bucket/media/**/highres*.png .`)
 * [ ] Binary size reduction
