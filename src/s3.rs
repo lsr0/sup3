@@ -137,6 +137,11 @@ impl Target {
             Self::File(path) | Self::Directory(path) => path.clone()
         }
     }
+    pub fn child(&self, child_directory: &str) -> Target {
+        let mut path = self.path();
+        path.push(child_directory);
+        Self::Directory(path)
+    }
 }
 
 async fn get_write_loop(local_file: &mut partial_file::PartialFile, mut body: aws_smithy_http::byte_stream::ByteStream) -> Result<(), Error> {
@@ -212,6 +217,10 @@ impl Client {
         }
     }
     pub async fn get(&self, verbose: bool, from: &Uri, to: &Target, progress_fn: cli::ProgressFn) -> Result<PathBuf, Error> {
+        // S3 errors on root key requests, wrap into no such key
+        if from.key.is_empty() {
+            return Err(Error::NoSuchKey(from.clone()));
+        }
         progress_fn(cli::Update::State("connecting"));
         let mut response = self.client.get_object()
             .bucket(from.bucket.clone())

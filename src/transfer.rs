@@ -33,7 +33,7 @@ fn flag_concurrency_in_range(s: &str) -> Result<u16, String> {
 }
 
 pub async fn upload(local_paths: &[std::path::PathBuf], to: &s3::Uri, client: &s3::Client, opts: &SharedOptions, transfer: &OptionsTransfer, recursive: bool) -> MainResult {
-    let progress = Arc::new(cli::Output::new(&transfer.progress, opts.verbose));
+    let progress = Arc::new(cli::Output::new(&transfer.progress, opts.verbose, None));
     progress.add_incoming_tasks(local_paths.len());
     let semaphore = Arc::new(tokio::sync::Semaphore::new(transfer.concurrency.unwrap_or(1) as usize));
 
@@ -169,12 +169,20 @@ async fn upload_recursive_one(path: std::path::PathBuf, to: &s3::Uri, recursive:
 }
 
 #[async_recursion::async_recursion]
-async fn download_recursive_one(uri: s3::Uri, target: s3::Target, recursive: bool, progress: Arc<cli::Output>, client: s3::Client, verbose: bool, semaphore: Arc<tokio::sync::Semaphore>, options: OptionsTransfer) -> u32 {
+async fn download_recursive_one(uri: s3::Uri, target: s3::Target, recursive: bool, progress: Arc<cli::Output>, client: s3::Client, verbose: bool, semaphore: Arc<tokio::sync::Semaphore>, options: OptionsTransfer, create_directory: bool) -> u32 {
     let token = semaphore.clone().acquire_owned().await.unwrap();
-    let filename = uri.filename().unwrap_or(uri.key.as_str()).to_owned();
-    let update_fn = progress.add("initialising", filename);
+    let update_fn = progress.add("initialising", uri.to_string());
     let update_fn_for_error = update_fn.clone();
     let mut error_count = 0;
+    use std::io::ErrorKind::AlreadyExists;
+    if create_directory {
+        let create_result = tokio::fs::create_dir(&target.path()).await
+            .or_else(|err| if err.kind() == AlreadyExists { Ok(()) } else { Err(err) });
+        if let Err(e) = create_result {
+            update_fn_for_error(cli::Update::Error(format!("creating directory: {e}")));
+            progress.println_error_noprogress(format_args!("creating directory: {e}"));
+        }
+    }
     let fut = client.get_recursive(verbose, recursive, uri.clone(), target.clone(), update_fn)
         .inspect_err(move |e| update_fn_for_error(cli::Update::Error(e.to_string())))
         .map(|res| (res, token));
@@ -184,11 +192,19 @@ async fn download_recursive_one(uri: s3::Uri, target: s3::Target, recursive: boo
             progress.println_done_verbose(format_args!("downloaded {path:?}"));
         },
         Ok(s3::GetRecursiveResult::Many{bucket, keys, target}) => {
+            // Create directories for all children, recursive file results here.
             let mut futures = FuturesUnordered::new();
             progress.add_incoming_tasks(keys.len());
             for key in keys {
+                let additional_path = &key[uri.key.len()..];
+                let additional_dir = additional_path.rsplit_once('/').map(|(dir, _filename)| dir);
+                let target = match additional_dir {
+                    Some(dir) => target.child(dir),
+                    None => target.clone(),
+                };
+                let create_dir = additional_dir.is_some();
                 let key = key.clone();
-                let fut = download_recursive_one(s3::Uri::new(bucket.clone(), key), target.clone(), recursive, progress.clone(), client.clone(), verbose, semaphore.clone(), options.clone());
+                let fut = download_recursive_one(s3::Uri::new(bucket.clone(), key), target.clone(), recursive, progress.clone(), client.clone(), verbose, semaphore.clone(), options.clone(), create_dir);
                 futures.push(fut);
             }
             while let Some(res) = futures.next().await {
@@ -208,7 +224,8 @@ async fn download_recursive_one(uri: s3::Uri, target: s3::Target, recursive: boo
 }
 
 pub async fn download(uris: &[s3::Uri], to: &std::path::PathBuf, client: &s3::Client, opts: &SharedOptions, transfer: &OptionsTransfer, recursive: bool) -> MainResult {
-    let progress = Arc::new(cli::Output::new(&transfer.progress, opts.verbose));
+    let uri_prefix = cli::longest_file_display_prefix(uris.iter().map(|uri| uri.to_string()));
+    let progress = Arc::new(cli::Output::new(&transfer.progress, opts.verbose, Some(uri_prefix.clone())));
     progress.add_incoming_tasks(uris.len());
     let verbose = opts.verbose && !progress.progress_enabled();
 
@@ -232,7 +249,7 @@ pub async fn download(uris: &[s3::Uri], to: &std::path::PathBuf, client: &s3::Cl
     let mut futures = FuturesUnordered::new();
 
     for uri in uris.iter() {
-        let fut = download_recursive_one(uri.clone(), target.clone(), recursive, progress.clone(), client.clone(), verbose, semaphore.clone(), transfer.clone());
+        let fut = download_recursive_one(uri.clone(), target.clone(), recursive, progress.clone(), client.clone(), verbose, semaphore.clone(), transfer.clone(), false);
         futures.push(fut);
 
         if cancellation.is_cancelled() {

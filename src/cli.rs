@@ -49,6 +49,8 @@ mod progress_enabled {
 
     pub const PREFIX_ERROR: console::Emoji = console::Emoji("❌ ", "");
     pub const PREFIX_DONE: console::Emoji = console::Emoji("✅ ", "");
+    #[allow(unused)]
+    pub const PREFIX_DEBUG: console::Emoji = console::Emoji("🐛 ", "");
 
     pub struct Bar {
         bar: indicatif::ProgressBar,
@@ -64,9 +66,10 @@ mod progress_enabled {
         verbose: bool,
         multi: indicatif::MultiProgress,
         bars: std::sync::Mutex<Bars>,
+        hidden_path_prefix: String,
     }
     impl Output {
-        pub fn new(args: &ArgProgress, verbose: bool) -> Output {
+        pub fn new(args: &ArgProgress, verbose: bool, hidden_path_prefix: Option<String>) -> Output {
             let draw_target = indicatif::ProgressDrawTarget::stderr_with_hz(6);
             let enabled = match args.progress {
                 ProgressOption::On => true,
@@ -78,6 +81,7 @@ mod progress_enabled {
                 multi: indicatif::MultiProgress::with_draw_target(draw_target),
                 bars: Default::default(),
                 verbose,
+                hidden_path_prefix: hidden_path_prefix.unwrap_or_default(),
             }
         }
         pub fn progress_enabled(&self) -> bool {
@@ -90,7 +94,7 @@ mod progress_enabled {
 
             let bar = indicatif::ProgressBar::new(1)
                 .with_message(initial_state.into());
-            bar.set_style(indicatif::ProgressStyle::with_template("{prefix:20.dim} {msg:>11.bold} {bytes:>10.cyan}/{total_bytes:>10.italic.250} {binary_bytes_per_sec:>11} {elapsed:>4} [{wide_bar:.red/blue}]")
+            bar.set_style(indicatif::ProgressStyle::with_template("{prefix:20.dim} {msg:>11.bold} {bytes:>10.cyan}/{total_bytes:>10.italic.250} {binary_bytes_per_sec:>11} {elapsed:>4} [{wide_bar:.cyan/blue.bold}]")
                 .unwrap()
                 .progress_chars("#>-"));
 
@@ -98,7 +102,7 @@ mod progress_enabled {
 
             self.add_bar(Bar {
                 bar: bar.clone(),
-                name,
+                name: name.strip_prefix(&self.hidden_path_prefix).map(Into::into).unwrap_or(name),
             });
 
             Arc::new(move |update: Update| {
@@ -199,6 +203,8 @@ mod progress_disabled {
 
     pub const PREFIX_ERROR: &'static str = "❌ ";
     pub const PREFIX_DONE: &'static str = "✅ ";
+    #[allow(unused)]
+    pub const PREFIX_DEBUG: &'static str = "🐛 ";
 
     #[derive(Default)]
     pub struct Output {
@@ -228,4 +234,63 @@ mod progress_disabled {
 
 #[cfg(not(feature = "progress"))]
 pub use progress_disabled::*;
+
+/// Common path component prefix
+/// e.g. ["/r/a1/b.txt", "/r/a2/b.txt"] -> "/r/"
+pub fn longest_file_display_prefix(mut strings: impl Iterator<Item = String>) -> String {
+    let mut longest: String = match strings.next() {
+        None => return "".into(),
+        Some(s) => s.to_string(),
+    };
+    for item in strings {
+        let count_same = item.chars().zip(longest.chars()).take_while(|(s, l)| s == l).count();
+        longest.truncate(count_same);
+    }
+    // Trim back to last common path component
+    match longest.rfind('/') {
+        Some(ind) => longest.truncate(ind + 1),
+        _ => {},
+    }
+    longest
+}
+
+#[test]
+fn test_longest_file_display_prefix()
+{
+    #[track_caller]
+    fn test_static(filenames: &[&'static str], expected_prefix: &'static str) {
+        let owned_iter = filenames.iter().map(|s| s.to_string());
+        assert_eq!(longest_file_display_prefix(owned_iter), expected_prefix);
+    }
+    test_static(&[
+        "s3://bucket/dir/second/1.ext",
+        "s3://bucket/dir/second/2.ext",
+    ],
+        "s3://bucket/dir/second/"
+    );
+    test_static(&[
+        "s3://bucket/dir/second/1.ext",
+        "s3://otherbucket/dir/second/2.ext",
+    ],
+        "s3://"
+    );
+    test_static(&[
+        "s3://bucket/dir/second/1.ext",
+        "s3://bucket/dir/different/2.ext",
+    ],
+        "s3://bucket/dir/"
+    );
+    test_static(&[
+        "s3://bucket/dir/second/1.ext",
+        "s3://bucket2/dir/second/2.ext",
+    ],
+        "s3://"
+    );
+    test_static(&[
+        "s3://bucket/prog-v0.5.0/1.ext",
+        "s3://bucket/prog-v0.6.0/1.ext",
+    ],
+        "s3://bucket/"
+    );
+}
 
