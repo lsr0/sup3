@@ -45,6 +45,9 @@ enum Commands {
     Cp(Copy),
     /// Print contents of S3 files
     Cat(Cat),
+    /// Create S3 buckets
+    #[clap(alias="mb")]
+    MakeBuckets(MakeBuckets),
 }
 
 #[derive(Args, Debug)]
@@ -114,6 +117,16 @@ struct Cat {
     /// S3 URIs in s3://bucket/path/components format
     #[clap(required = true)]
     uris: Vec<s3::Uri>,
+}
+
+#[derive(Args, Debug)]
+struct MakeBuckets {
+    /// S3 URIs in s3://bucket format
+    #[clap(required = true)]
+    buckets: Vec<s3::Uri>,
+    /// Continue to next file on error
+    #[clap(long, short='y')]
+    continue_on_error: bool,
 }
 
 pub enum MainResult {
@@ -260,6 +273,35 @@ impl Cat {
     }
 }
 
+impl MakeBuckets {
+    async fn run(&self, client: &s3::Client, opts: &SharedOptions) -> MainResult {
+        for uri in &self.buckets {
+            if !uri.key.is_empty() {
+                use clap::CommandFactory;
+                let _ = Arguments::command()
+                    .error(clap::ErrorKind::InvalidValue, "make_bucket requires pure bucket arguments without a key, e.g. 's3://bucketname/'")
+                    .print();
+                return MainResult::ErrorArguments;
+            }
+        }
+        let mut error_count = 0;
+        for uri in &self.buckets {
+            if opts.verbose {
+                eprintln!("🏁 mb '{uri}'");
+            }
+            if let Err(e) = client.make_bucket(uri).await {
+                cli::println_error(format_args!("failed to cat {uri}: {e}"));
+                if !self.continue_on_error {
+                    return MainResult::ErrorSomeOperationsFailed;
+                } else {
+                    error_count += 1;
+                }
+            }
+        }
+        MainResult::from_error_count(error_count)
+    }
+}
+
 #[tokio::main]
 async fn main() -> MainResult {
     let args = Arguments::parse();
@@ -274,6 +316,7 @@ async fn main() -> MainResult {
         Commands::ListBuckets(list_buckets) => list_buckets.run(&client, &args.shared).await,
         Commands::Cp(copy) => copy.run(&client, &args.shared).await,
         Commands::Cat(cat) => cat.run(&client, &args.shared).await,
+        Commands::MakeBuckets(make_buckets) => make_buckets.run(&client, &args.shared).await,
     };
     exit_code
 }

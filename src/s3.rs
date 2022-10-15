@@ -365,6 +365,14 @@ impl Client {
             .map(|_| ())
             .map_err(Error::Io)
     }
+    pub async fn make_bucket(&self, uri: &Uri) -> Result<(), Error> {
+        self.client.create_bucket()
+            .bucket(uri.bucket.clone())
+            .send()
+            .await
+            .map_err(|e| -> aws_sdk_s3::Error { e.into() } )?;
+        Ok(())
+    }
 }
 
 fn error_from_get(uri: &Uri, sdk: aws_sdk_s3::types::SdkError<aws_sdk_s3::error::GetObjectError>) -> Error {
