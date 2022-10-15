@@ -290,7 +290,7 @@ impl MakeBuckets {
                 eprintln!("🏁 mb '{uri}'");
             }
             if let Err(e) = client.make_bucket(uri).await {
-                cli::println_error(format_args!("failed to cat {uri}: {e}"));
+                cli::println_error(format_args!("failed to create bucket {uri}: {e}"));
                 if !self.continue_on_error {
                     return MainResult::ErrorSomeOperationsFailed;
                 } else {
