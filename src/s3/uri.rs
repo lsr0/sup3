@@ -20,6 +20,8 @@ pub enum UriError {
     MissingBucket,
     #[error("invalid url component provided: {0}")]
     InvalidUrlComponents(&'static str),
+    #[error("invalid bucket name: {0}")]
+    InvalidBucketName(&'static str),
 }
 
 impl std::str::FromStr for Uri {
@@ -38,11 +40,14 @@ impl std::str::FromStr for Uri {
         let bucket = match parsed.host() {
             None => return Err(UriError::MissingBucket),
             Some(b) => b,
-        };
+        }.to_string();
+
+        validate_bucket_name(&bucket)
+            .map_err(|e| UriError::InvalidBucketName(e))?;
         let path = parsed.path();
         let key = if path.is_empty() { "".to_owned() } else { path.strip_prefix('/').expect("separator must be /").to_owned() };
         Ok(Uri {
-            bucket: bucket.to_string(),
+            bucket,
             key: Key(key),
         })
     }
@@ -127,3 +132,39 @@ impl std::fmt::Display for Uri {
         write!(f, "s3://{}/{}", self.bucket, self.key)
     }
 }
+
+pub fn bucket_valid_starting_char(c: char) -> bool {
+    match c {
+        'a'..='z' => true,
+        '0'..='9' => true,
+        _         => false,
+    }
+}
+
+pub fn bucket_valid_char(c: char) -> bool {
+    match c {
+        'a'..='z' => true,
+        '0'..='9' => true,
+        '.' | '-' => true,
+        _         => false,
+    }
+}
+
+pub fn validate_bucket_name(bucket: &str) -> Result<(), &'static str> {
+    if bucket.len() < 3 {
+        return Err("too short (must be at least 3 characters)");
+    }
+
+    for c in bucket.chars() {
+        if !bucket_valid_char(c) {
+            return Err("invalid character (valid: [a-z0-9.-])");
+        }
+    }
+    if !bucket.starts_with(bucket_valid_starting_char) ||
+       !bucket.ends_with(bucket_valid_starting_char) {
+        return Err("needs begin and end with a number or character ([a-z0-9])");
+    }
+
+    Ok(())
+}
+
