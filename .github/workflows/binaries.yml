@@ -20,7 +20,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: 'Checkout'
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: 'Install Rust Stable'
         uses: actions-rs/toolchain@v1
@@ -35,7 +35,7 @@ jobs:
           args: --profile release-small ${{ contains(matrix.os, 'windows') && '--target-dir=./target' || '' }} ${{ matrix.cross_arch_long && format('--target {0}', matrix.cross_arch_long) || '' }}
 
       - name: 'Upload Artifact'
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         env:
           target_path_component: ${{ matrix.cross_arch_long && format('/{0}', matrix.cross_arch_long) || '' }}
         with:
@@ -63,7 +63,7 @@ jobs:
           zip release/sup3-windows-x64_64-$GITHUB_REF_NAME.zip job_artifacts/sup3-Windows-X64/sup3.exe --junk-paths
 
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: action/gh-release@v1
         with:
           generate_release_notes: true
           draft: true
