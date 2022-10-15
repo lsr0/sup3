@@ -16,6 +16,8 @@ Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/aw
 * Act as much as possible like existing unix commands (e.g. cp, ls, cat)
 * Progress reporting by default where it makes sense (e.g. cp, down, up)
 
+![Recording of download with progress enabled](/images/download_progress_anim_0.8.5.gif)
+
 
 ## Features
 * Cross-platform
