@@ -18,6 +18,7 @@ pub use uri::{Uri, UriError, Key};
 #[derive(Clone)]
 pub struct Client {
     client: aws_sdk_s3::Client,
+    region: Option<Region>,
 }
 
 pub async fn init(region: Option<String>, endpoint: Option<http::uri::Uri>) -> Client {
@@ -34,6 +35,7 @@ pub async fn init(region: Option<String>, endpoint: Option<http::uri::Uri>) -> C
     let client = aws_sdk_s3::Client::new(&config);
     Client {
         client,
+        region: config.region().cloned(),
     }
 }
 
@@ -366,8 +368,15 @@ impl Client {
             .map_err(Error::Io)
     }
     pub async fn make_bucket(&self, uri: &Uri) -> Result<(), Error> {
+        let location_constraint = self.region.as_ref()
+            .map(|r| r.as_ref().parse().expect("infallible"));
+        let create_config = aws_sdk_s3::model::CreateBucketConfiguration::builder()
+            .set_location_constraint(location_constraint)
+            .build();
+
         self.client.create_bucket()
             .bucket(uri.bucket.clone())
+            .create_bucket_configuration(create_config)
             .send()
             .await
             .map_err(|e| -> aws_sdk_s3::Error { e.into() } )?;
