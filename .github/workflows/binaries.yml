@@ -63,7 +63,7 @@ jobs:
           zip release/sup3-windows-x64_64-$GITHUB_REF_NAME.zip job_artifacts/sup3-Windows-X64/sup3.exe --junk-paths
 
       - name: Release
-        uses: action/gh-release@v1
+        uses: softprops/action-gh-release@v1
         with:
           generate_release_notes: true
           draft: true
