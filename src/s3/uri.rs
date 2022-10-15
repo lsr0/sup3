@@ -150,6 +150,8 @@ pub fn bucket_valid_char(c: char) -> bool {
     }
 }
 
+/// Validate bucket name against a pragmatic subset of the rules at
+/// <https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html>
 pub fn validate_bucket_name(bucket: &str) -> Result<(), &'static str> {
     if bucket.len() < 3 {
         return Err("too short (must be at least 3 characters)");
