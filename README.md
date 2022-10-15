@@ -47,6 +47,7 @@ Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/aw
 * [x] Copy (`cp`)
 * [x] Cat (S3 URIs)
 * [ ] Touch (S3 URIs)
+* [ ] Make Bucket (`mb`) (S3 URIs)
 
 ## Speed
 
