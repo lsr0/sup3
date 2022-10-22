@@ -33,7 +33,8 @@ fn flag_concurrency_in_range(s: &str) -> Result<u16, String> {
 }
 
 pub async fn upload(local_paths: &[std::path::PathBuf], to: &s3::Uri, client: &s3::Client, opts: &SharedOptions, transfer: &OptionsTransfer, recursive: bool) -> MainResult {
-    let progress = Arc::new(cli::Output::new(&transfer.progress, opts.verbose, None));
+    let file_prefix = cli::longest_file_display_prefix(local_paths.iter().filter_map(|path| path.to_str()));
+    let progress = Arc::new(cli::Output::new(&transfer.progress, opts.verbose, Some(file_prefix)));
     progress.add_incoming_tasks(local_paths.len());
     let semaphore = Arc::new(tokio::sync::Semaphore::new(transfer.concurrency.unwrap_or(1) as usize));
 

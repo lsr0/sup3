@@ -237,13 +237,13 @@ pub use progress_disabled::*;
 
 /// Common path component prefix
 /// e.g. ["/r/a1/b.txt", "/r/a2/b.txt"] -> "/r/"
-pub fn longest_file_display_prefix(mut strings: impl Iterator<Item = String>) -> String {
+pub fn longest_file_display_prefix<T: AsRef<str>>(mut strings: impl Iterator<Item = T>) -> String {
     let mut longest: String = match strings.next() {
         None => return "".into(),
-        Some(s) => s.to_string(),
+        Some(s) => s.as_ref().to_string(),
     };
     for item in strings {
-        let count_same = item.chars().zip(longest.chars()).take_while(|(s, l)| s == l).count();
+        let count_same = item.as_ref().chars().zip(longest.chars()).take_while(|(s, l)| s == l).count();
         longest.truncate(count_same);
     }
     // Trim back to last common path component
