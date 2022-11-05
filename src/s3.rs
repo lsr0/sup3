@@ -12,6 +12,7 @@ use crate::cli;
 
 mod uri;
 mod partial_file;
+mod seen_directories;
 
 pub use uri::{Uri, UriError, Key};
 
@@ -318,7 +319,14 @@ impl Client {
             }
         }
 
-        ls_consume_response(args, &response, &relative_root, &s3_uri.bucket);
+        let directory_prefix = if args.recurse && !relative_root.is_explicitly_directory() && is_requested_path_directory(&response, &relative_root) {
+            relative_root.to_explicit_directory()
+        } else {
+            relative_root.basename_key()
+        };
+
+        let mut seen_directories = seen_directories::SeenDirectories::new(&relative_root);
+        ls_consume_response(args, &response, &directory_prefix, &s3_uri.bucket, &mut seen_directories);
 
         let mut continuation_token = response.next_continuation_token;
         let mut page = 2;
@@ -329,7 +337,7 @@ impl Client {
             let continuation_response = self.ls_inner(&s3_uri.bucket, &relative_root, separator, continuation_token.take())
                 .await?;
 
-            ls_consume_response(args, &continuation_response, &relative_root, &s3_uri.bucket);
+            ls_consume_response(args, &continuation_response, &relative_root, &s3_uri.bucket, &mut seen_directories);
             continuation_token = continuation_response.next_continuation_token;
             page += 1;
         }
@@ -436,13 +444,7 @@ fn is_requested_path_directory(response: &ListObjectsV2Output, requested_path: &
     false
 }
 
-fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, prefix: &Key, bucket: &str) {
-    let directory_prefix = if args.recurse && !prefix.is_explicitly_directory() && is_requested_path_directory(response, prefix) {
-        prefix.to_explicit_directory()
-    } else {
-        prefix.basename_key()
-    };
-
+fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, directory_prefix: &Key, bucket: &str, seen_directories: &mut seen_directories::SeenDirectories) {
     let printable_filename = |key: &str| {
         if args.full_path {
             format!("s3://{bucket}/{}", if key == "/" { "" } else { key })
@@ -458,10 +460,8 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, pre
 
     let size_width = cli::digit_count(max_file_size as u64);
 
-    let mut seen_directories = std::collections::hash_set::HashSet::new();
-
-    let print_directory = |name| {
-        if !key_matches_requested(prefix, name, args) {
+    let print_directory = |name: &str| {
+        if !key_matches_requested(directory_prefix, name, args) {
             return;
         }
         let name = printable_filename(name);
@@ -480,13 +480,15 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, pre
 
     for file in response.contents().unwrap_or_default() {
         if let Some(name) = &file.key {
-            if !key_matches_requested(prefix, name, args) {
+            if !key_matches_requested(directory_prefix, name, args) {
                 continue;
             }
             if args.recurse {
                 let dir_path = basename(name);
-                if (dir_path != prefix.as_str()) && seen_directories.insert(dir_path) {
-                    print_directory(dir_path);
+                if dir_path != directory_prefix.as_str() {
+                    for unseen_directory in seen_directories.add_key(dir_path) {
+                        print_directory(&unseen_directory);
+                    }
                 }
             }
             let name = printable_filename(name);
