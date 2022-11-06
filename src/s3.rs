@@ -109,13 +109,13 @@ pub enum Target {
 }
 
 impl Target {
-    pub fn new_create(uris: &[Uri], to: &PathBuf) -> Result<Target, String> {
+    pub fn new_create(uris: &[Uri], to: &PathBuf, recursive: bool) -> Result<Target, String> {
         match to.metadata() {
             Ok(meta) if meta.is_dir() => Ok(Target::Directory(to.clone())),
             Ok(_) if uris.len() > 1 => Err("multiple uris and destination is not a directory".to_owned()),
             Ok(_) => Ok(Target::File(to.clone())),
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                if uris.len() > 1 {
+                if uris.len() > 1 || recursive {
                     std::fs::create_dir(to).map_err(|e| format!("failed to create directory: {e}"))?;
                     Ok(Target::Directory(to.clone()))
                 } else {
@@ -159,9 +159,45 @@ async fn get_write_loop(local_file: &mut partial_file::PartialFile, mut body: aw
     Ok(())
 }
 
-pub enum GetRecursiveResult {
+pub enum GetRecursiveResultStream<'a> {
     One(PathBuf),
-    Many{bucket: String, keys: Vec<Key>, target: Target},
+    Many(RecursiveListStream<'a>),
+}
+
+pub enum RecursiveStreamItem {
+    Directory(Key),
+    File(Key),
+}
+
+pub struct RecursiveListStream<'a> {
+    client: &'a Client,
+    seen_directories: seen_directories::SeenDirectories,
+    directory_uri: Uri,
+    continuation_token: Option<String>,
+    progress_fn: cli::ProgressFn,
+}
+
+impl<'a> RecursiveListStream<'a> {
+    pub fn stream(&'a mut self) -> impl Stream<Item = Result<Vec<RecursiveStreamItem>, Error>> + 'a {
+        async_stream::try_stream! {
+            loop {
+                let response = self.client.get_recursive_list_page(&self.directory_uri, &mut self.seen_directories, self.continuation_token.clone())
+                    .await?;
+                match response {
+                    None => return (),
+                    Some((page, continuation_token)) if continuation_token.is_some() => {
+                        self.continuation_token = continuation_token;
+                        yield page;
+                    },
+                    Some((page, _continuation_token)) => {
+                        (self.progress_fn)(cli::Update::FinishedHide());
+                        yield page;
+                        return ();
+                    },
+                }
+            }
+        }
+    }
 }
 
 impl Client {
@@ -202,20 +238,14 @@ impl Client {
         progress_fn(cli::Update::Finished());
         Ok(destination)
     }
-    pub async fn get_recursive(&self, verbose: bool, recursive: bool, from: Uri, to: Target, progress_fn: cli::ProgressFn) -> Result<GetRecursiveResult, Error> {
+    pub async fn get_recursive_stream(&self, verbose: bool, recursive: bool, from: Uri, to: Target, progress_fn: cli::ProgressFn) -> Result<GetRecursiveResultStream, Error> {
+        progress_fn(cli::Update::State("listing"));
         match self.get(verbose, &from, &to, progress_fn.clone()).await {
             Err(Error::NoSuchKey(uri)) if recursive => {
-                let recursive_files = self.get_recursive_list(&uri).await?;
-                progress_fn(cli::Update::FinishedHide());
-                let mut child_path = to.path();
-                child_path.push(uri.key.as_directory_component());
-                use std::io::ErrorKind::AlreadyExists;
-                tokio::fs::create_dir(&child_path).await
-                    .or_else(|err| if err.kind() == AlreadyExists { Ok(()) } else { Err(err) })?;
-                let target = Target::Directory(child_path);
-                Ok(GetRecursiveResult::Many{bucket: from.bucket.clone(), keys: recursive_files, target})
+                let recursive_stream = self.get_recursive_list_stream(&uri, progress_fn).await?;
+                Ok(GetRecursiveResultStream::Many(recursive_stream))
             },
-            Ok(path) => Ok(GetRecursiveResult::One(path)),
+            Ok(path) => Ok(GetRecursiveResultStream::One(path)),
             Err(err) => Err(err),
         }
     }
@@ -252,20 +282,38 @@ impl Client {
         progress_fn(cli::Update::Finished());
         Ok(local_path)
     }
-    pub async fn get_recursive_list(&self, s3_uri: &Uri) -> Result<Vec<Key>, Error> {
-        let key = s3_uri.key.to_explicit_directory();
-        let files = self.ls_inner(&s3_uri.bucket, &key, None, None)
+    pub async fn get_recursive_list_stream(&self, uri: &Uri, progress_fn: cli::ProgressFn) -> Result<RecursiveListStream, Error> {
+        let key = uri.key.to_explicit_directory();
+        let seen_directories = seen_directories::SeenDirectories::new(key.as_str());
+        Ok(RecursiveListStream {
+            client: self,
+            seen_directories,
+            directory_uri: Uri::new(uri.bucket.clone(), key),
+            continuation_token: None,
+            progress_fn,
+        })
+    }
+    pub async fn get_recursive_list_page(&self, uri: &Uri, seen_directories: &mut seen_directories::SeenDirectories, continuation_token: Option<String>) -> Result<Option<(Vec<RecursiveStreamItem>, Option<String>)>, Error> {
+        let files = self.ls_inner(&uri.bucket, &uri.key, None, continuation_token)
             .await?;
         let mut ret = Vec::new();
         for key in files.contents.unwrap_or_default()
             .into_iter()
             .flat_map(|f| f.key) {
-            ret.push(Key::new(key));
+            for dir in seen_directories.add_key(&key) {
+                ret.push(RecursiveStreamItem::Directory(Key::new(dir)));
+            }
+            ret.push(RecursiveStreamItem::File(Key::new(key)));
         }
+        let next_continuation_token = files.continuation_token;
         if ret.is_empty() {
-            return Err(Error::NoSuchKey(s3_uri.clone()));
+            if next_continuation_token.is_some() {
+                return Ok(None);
+            } else {
+                return Err(Error::NoSuchKey(uri.clone()));
+            }
         }
-        Ok(ret)
+        Ok(Some((ret, next_continuation_token)))
     }
     pub async fn remove(&self, opts: &SharedOptions, s3_uri: &Uri) -> Result<(), Error> {
         if opts.verbose {

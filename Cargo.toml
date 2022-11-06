@@ -27,6 +27,7 @@ console = { version = "0.15", optional = true }
 http = "0.2"
 async-recursion = "1"
 tokio-util = "0"
+async-stream = "0.3.3"
 
 [profile.release]
 opt-level = "s"
