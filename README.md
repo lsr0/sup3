@@ -32,7 +32,7 @@ Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/aw
 * [x] Recursive download support
 * [ ] Remote globbing (e.g. `sup3 ls s3://bucket/media/**/highres*.png .`)
 * [ ] Binary size reduction
-* [ ] Upload arguments, e.g. ACLs
+* [x] Upload arguments, e.g. ACLs
 * [ ] Config file support
 * [ ] List only files or only directories
 * [x] List paging
