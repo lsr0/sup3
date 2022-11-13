@@ -28,8 +28,23 @@ pub struct OptionsUpload {
     ///   private, public-read, public-read-write, aws-exec-read,
     ///   authenticated-read, bucket-owner-read,
     ///   bucket-owner-full-control
-    #[clap(long, verbatim_doc_comment)]
+    #[clap(long, verbatim_doc_comment, help_heading="Access Control")]
     pub canned_acl: Option<aws_sdk_s3::model::ObjectCannedAcl>,
+    /// Grant read access (comma separated, [id=|uri=|emailAddress=])
+    #[clap(long, help_heading="Access Control")]
+    pub grant_read: Option<String>,
+    /// Grant full control (comma separated, [id=|uri=|emailAddress=])
+    #[clap(long, help_heading="Access Control")]
+    pub grant_full: Option<String>,
+    /// Grant read ACL (comma separated, [id=|uri=|emailAddress=])
+    #[clap(long, help_heading="Access Control")]
+    pub grant_read_acp: Option<String>,
+    /// Grant write ACL (comma separated, [id=|uri=|emailAddress=])
+    #[clap(long, help_heading="Access Control")]
+    pub grant_write_acp: Option<String>,
+    /// Storage Class
+    #[clap(long, possible_values=aws_sdk_s3::model::StorageClass::values())]
+    pub class: Option<aws_sdk_s3::model::StorageClass>,
 }
 
 pub async fn init(region: Option<String>, endpoint: Option<http::uri::Uri>) -> Client {
@@ -242,6 +257,11 @@ impl Client {
             .bucket(s3_uri.bucket.clone())
             .key(key.to_string())
             .set_acl(options_upload.canned_acl.to_owned())
+            .set_grant_read(options_upload.grant_read.to_owned())
+            .set_grant_full_control(options_upload.grant_full.to_owned())
+            .set_grant_read_acp(options_upload.grant_read_acp.to_owned())
+            .set_grant_write_acp(options_upload.grant_write_acp.to_owned())
+            .set_storage_class(options_upload.class.to_owned())
             .body(stream)
             .send()
             .await
