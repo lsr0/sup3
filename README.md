@@ -1,6 +1,10 @@
 # sup3
+[![Standalone Binaries](https://github.com/lsr0/sup3/actions/workflows/binaries.yml/badge.svg)](https://github.com/lsr0/sup3/actions/workflows/binaries.yml)
+
 
 **A standalone S3 tool**
+
+![Recording of download with progress enabled](/images/download_progress_anim_0.8.5.gif)
 
 ## Warning
 This is **alpha**
@@ -15,9 +19,6 @@ Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/aw
 ## Design
 * Act as much as possible like existing unix commands (e.g. cp, ls, cat)
 * Progress reporting by default where it makes sense (e.g. cp, down, up)
-
-![Recording of download with progress enabled](/images/download_progress_anim_0.8.5.gif)
-
 
 ## Features
 * Cross-platform
