@@ -2,6 +2,7 @@ use futures::FutureExt;
 use std::sync::Arc;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
+use std::num::NonZeroU16;
 
 use crate::s3;
 use crate::cli;
@@ -11,8 +12,8 @@ use crate::shared_options::SharedOptions;
 #[derive(clap::Args, Debug, Clone)]
 pub struct OptionsTransfer {
     /// Perform multiple uploads concurrently
-    #[clap(long, short='j', parse(try_from_str=flag_concurrency_in_range))]
-    concurrency: Option<u16>,
+    #[clap(long, short='j', default_value="1")]
+    concurrency: NonZeroU16,
     /// Continue to next file on error
     #[clap(long, short='y')]
     continue_on_error: bool,
@@ -21,19 +22,11 @@ pub struct OptionsTransfer {
     progress: cli::ArgProgress,
 }
 
-fn flag_concurrency_in_range(s: &str) -> Result<u16, String> {
-    match s.parse() {
-        Ok(val) if val > 0 => Ok(val),
-        Ok(_) => Err("concurrency not at least 1".to_owned()),
-        Err(e) => Err(format!("{e}")),
-    }
-}
-
 pub async fn upload(local_paths: &[std::path::PathBuf], to: &s3::Uri, client: &s3::Client, opts: &SharedOptions, transfer: &OptionsTransfer, recursive: bool) -> MainResult {
     let file_prefix = cli::longest_file_display_prefix(local_paths.iter().filter_map(|path| path.to_str()));
     let progress = Arc::new(cli::Output::new(&transfer.progress, opts.verbose, Some(file_prefix)));
     progress.add_incoming_tasks(local_paths.len());
-    let semaphore = Arc::new(tokio::sync::Semaphore::new(transfer.concurrency.unwrap_or(1) as usize));
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(transfer.concurrency.get() as usize));
 
     let cancellation = tokio_util::sync::CancellationToken::new();
     let ctrlc_cancel = cancellation.clone();
@@ -176,7 +169,7 @@ async fn download_recursive_one(uri: s3::Uri, target: s3::Target, recursive: boo
         .map(|res| (res, token))
         .await;
     match res {
-        Ok(s3::GetRecursiveResultStream::One(path)) => if verbose && options.concurrency.unwrap_or(1) > 1 && !progress.progress_enabled() {
+        Ok(s3::GetRecursiveResultStream::One(path)) => if verbose && options.concurrency.get() > 1 && !progress.progress_enabled() {
             progress.println_done_verbose(format_args!("downloaded {path:?}"));
         },
         Ok(s3::GetRecursiveResultStream::Many(mut list_stream)) => {
@@ -250,7 +243,7 @@ pub async fn download(uris: &[s3::Uri], to: &std::path::PathBuf, client: &s3::Cl
     progress.add_incoming_tasks(uris.len());
     let verbose = opts.verbose && !progress.progress_enabled();
 
-    let semaphore = Arc::new(tokio::sync::Semaphore::new(transfer.concurrency.unwrap_or(1) as usize));
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(transfer.concurrency.get() as usize));
     let cancellation = tokio_util::sync::CancellationToken::new();
 
     let ctrlc_cancel = cancellation.clone();
