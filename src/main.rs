@@ -133,6 +133,9 @@ struct MakeBuckets {
     /// Continue to next file on error
     #[clap(long, short='y')]
     continue_on_error: bool,
+
+    #[clap(flatten)]
+    s3_options: s3::OptionsMakeBucket,
 }
 
 pub enum MainResult {
@@ -295,7 +298,7 @@ impl MakeBuckets {
             if opts.verbose {
                 eprintln!("🏁 mb '{uri}'");
             }
-            if let Err(e) = client.make_bucket(uri).await {
+            if let Err(e) = client.make_bucket(uri, &self.s3_options).await {
                 cli::println_error(format_args!("failed to create bucket {uri}: {e}"));
                 if !self.continue_on_error {
                     return MainResult::ErrorSomeOperationsFailed;
