@@ -22,7 +22,7 @@ pub struct OptionsTransfer {
     progress: cli::ArgProgress,
 }
 
-pub async fn upload(local_paths: &[std::path::PathBuf], to: &s3::Uri, client: &s3::Client, opts: &SharedOptions, transfer: &OptionsTransfer, recursive: bool) -> MainResult {
+pub async fn upload(local_paths: &[std::path::PathBuf], to: &s3::Uri, client: &s3::Client, opts: &SharedOptions, transfer: &OptionsTransfer, opts_upload: &s3::OptionsUpload, recursive: bool) -> MainResult {
     let file_prefix = cli::longest_file_display_prefix(local_paths.iter().filter_map(|path| path.to_str()));
     let progress = Arc::new(cli::Output::new(&transfer.progress, opts.verbose, Some(file_prefix)));
     progress.add_incoming_tasks(local_paths.len());
@@ -40,7 +40,7 @@ pub async fn upload(local_paths: &[std::path::PathBuf], to: &s3::Uri, client: &s
     let mut futures = FuturesUnordered::new();
 
     for path in local_paths.into_iter() {
-        let fut = upload_recursive_one(path.to_owned(), to, recursive, progress.clone(), client.clone(), verbose, semaphore.clone(), transfer.clone());
+        let fut = upload_recursive_one(path.to_owned(), to, recursive, progress.clone(), client.clone(), verbose, semaphore.clone(), transfer.clone(), opts_upload);
         futures.push(fut);
 
         if cancellation.is_cancelled() {
@@ -68,9 +68,9 @@ pub async fn upload(local_paths: &[std::path::PathBuf], to: &s3::Uri, client: &s
     MainResult::from_error_count(error_count)
 }
 
-async fn upload_single(path: &std::path::PathBuf, to: &s3::Uri, progress: Arc<cli::Output>, update_fn: cli::ProgressFn, client: s3::Client, verbose: bool, _permit: tokio::sync::OwnedSemaphorePermit) -> u32 {
+async fn upload_single(path: &std::path::PathBuf, to: &s3::Uri, progress: Arc<cli::Output>, update_fn: cli::ProgressFn, client: s3::Client, verbose: bool, opts_upload: &s3::OptionsUpload, _permit: tokio::sync::OwnedSemaphorePermit) -> u32 {
     let update_fn_for_error = update_fn.clone();
-    match client.put(verbose, path, to, update_fn).await {
+    match client.put(verbose, opts_upload, path, to, update_fn).await {
         Ok(uri) => {
             progress.println_done_verbose(format_args!("uploaded {uri}"));
             0
@@ -84,7 +84,7 @@ async fn upload_single(path: &std::path::PathBuf, to: &s3::Uri, progress: Arc<cl
 }
 
 #[async_recursion::async_recursion]
-async fn upload_recursive_one(path: std::path::PathBuf, to: &s3::Uri, recursive: bool, progress: Arc<cli::Output>, client: s3::Client, verbose: bool, semaphore: Arc<tokio::sync::Semaphore>, options: OptionsTransfer) -> u32 {
+async fn upload_recursive_one(path: std::path::PathBuf, to: &s3::Uri, recursive: bool, progress: Arc<cli::Output>, client: s3::Client, verbose: bool, semaphore: Arc<tokio::sync::Semaphore>, options: OptionsTransfer, opts_upload: &s3::OptionsUpload) -> u32 {
     let token = semaphore.clone().acquire_owned().await.unwrap();
 
     let filename = path.to_string_lossy().to_string();
@@ -100,7 +100,7 @@ async fn upload_recursive_one(path: std::path::PathBuf, to: &s3::Uri, recursive:
     };
 
     if !metadata.is_dir() {
-        return upload_single(&path, to, progress, update_fn, client, verbose, token).await;
+        return upload_single(&path, to, progress, update_fn, client, verbose, opts_upload, token).await;
     }
     if !recursive {
         progress.println_error_noprogress(format_args!("given directory {path:?} in non-recursive mode"));
@@ -146,7 +146,7 @@ async fn upload_recursive_one(path: std::path::PathBuf, to: &s3::Uri, recursive:
         };
         progress.add_incoming_tasks(1);
 
-        futures.push(upload_recursive_one(child_file.path(), &to_child, recursive, progress.clone(), client.clone(), verbose, semaphore.clone(), options.clone()));
+        futures.push(upload_recursive_one(child_file.path(), &to_child, recursive, progress.clone(), client.clone(), verbose, semaphore.clone(), options.clone(), opts_upload));
     }
 
     update_fn(cli::Update::FinishedHide());

@@ -22,6 +22,16 @@ pub struct Client {
     region: Option<Region>,
 }
 
+#[derive(clap::Args, Debug, Clone)]
+pub struct OptionsUpload {
+    /// Canned access control list. Known values:
+    ///   private, public-read, public-read-write, aws-exec-read,
+    ///   authenticated-read, bucket-owner-read,
+    ///   bucket-owner-full-control
+    #[clap(long, verbatim_doc_comment)]
+    pub canned_acl: Option<aws_sdk_s3::model::ObjectCannedAcl>,
+}
+
 pub async fn init(region: Option<String>, endpoint: Option<http::uri::Uri>) -> Client {
     let provided_region = region.map(Region::new);
     let region_provider = RegionProviderChain::first_try(provided_region)
@@ -201,7 +211,7 @@ impl<'a> RecursiveListStream<'a> {
 }
 
 impl Client {
-    pub async fn put(&self, verbose: bool, path: &std::path::Path, s3_uri: &Uri, progress_fn: cli::ProgressFn) -> Result<String, Error> {
+    pub async fn put(&self, verbose: bool, options_upload: &OptionsUpload, path: &std::path::Path, s3_uri: &Uri, progress_fn: cli::ProgressFn) -> Result<String, Error> {
         progress_fn(cli::Update::State("opening"));
         let mut stream = ByteStream::from_path(path)
             .await
@@ -231,6 +241,7 @@ impl Client {
         self.client.put_object()
             .bucket(s3_uri.bucket.clone())
             .key(key.to_string())
+            .set_acl(options_upload.canned_acl.to_owned())
             .body(stream)
             .send()
             .await
