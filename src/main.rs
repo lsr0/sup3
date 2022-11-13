@@ -52,7 +52,7 @@ enum Commands {
 
 #[derive(Args, Debug)]
 struct Upload {
-    #[clap(required = true, parse(from_os_str))]
+    #[clap(required = true, value_parser)]
     local_paths: Vec<std::path::PathBuf>,
     /// S3 URI in s3://bucket/path/components format
     to: s3::Uri,
@@ -85,7 +85,7 @@ struct Download {
     /// S3 URIs in s3://bucket/path/components format
     #[clap(required = true)]
     uris: Vec<s3::Uri>,
-    #[clap(parse(from_os_str))]
+    #[clap(value_parser)]
     to: std::path::PathBuf,
 
     #[clap(flatten)]
