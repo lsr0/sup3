@@ -190,11 +190,14 @@ impl Target {
     }
 }
 
-async fn get_write_loop(local_file: &mut partial_file::PartialFile, mut body: aws_smithy_http::byte_stream::ByteStream) -> Result<(), Error> {
+async fn get_write_loop(local_file: &mut partial_file::PartialFile, mut body: aws_smithy_http::byte_stream::ByteStream, progress_fn: &cli::ProgressFn) -> Result<(), Error> {
     loop {
         let next_block = body.try_next();
         match next_block.await {
-            Ok(Some(bytes)) => local_file.writer().write_all(&bytes).await?,
+            Ok(Some(bytes)) => {
+                local_file.writer().write_all(&bytes).await?;
+                progress_fn(cli::Update::StateProgress(bytes.len()));
+            },
             Ok(None) => break,
             Err(e) => return Err(e.into()),
         };
@@ -304,7 +307,7 @@ impl Client {
             return Err(Error::NoSuchKey(from.clone()));
         }
         progress_fn(cli::Update::State("connecting"));
-        let mut response = self.client.get_object()
+        let response = self.client.get_object()
             .bucket(from.bucket.clone())
             .key(from.key.to_string())
             .send()
@@ -320,8 +323,7 @@ impl Client {
         if verbose {
             println!("🏁 downloading '{from}' [{size} bytes] to {path_printable}", size = response.content_length(), path_printable = local_file.path_printable());
         }
-        response.body.with_body_callback(ProgressCallback::wrap(progress_fn.clone()));
-        let local_path = match get_write_loop(&mut local_file, response.body).await {
+        let local_path = match get_write_loop(&mut local_file, response.body, &progress_fn).await {
             Ok(_) => local_file.finished().await?,
             Err(err) => {
                 local_file.cancelled().await?;
