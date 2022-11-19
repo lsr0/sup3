@@ -91,7 +91,7 @@ pub struct ListArguments {
     /// Display long format (size, date, name)
     #[clap(long, short='l')]
     long: bool,
-    /// List directories themselves, not their contents
+    /// Print a directory itself, if given as an argument
     #[clap(long, short='d')]
     directory: bool,
     /// List substring matches
@@ -100,6 +100,10 @@ pub struct ListArguments {
     /// Recurse into subdirectories
     #[clap(long, short='r')]
     recurse: bool,
+    #[clap(long, short='D')]
+    only_directories: bool,
+    #[clap(long, short='I')]
+    only_files: bool,
 }
 
 #[derive (thiserror::Error, Debug)]
@@ -576,9 +580,11 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, dir
         }
     };
 
-    for dir in response.common_prefixes().unwrap_or_default() {
-        if let Some(name) = &dir.prefix {
-            print_directory(name);
+    if !args.only_files {
+        for dir in response.common_prefixes().unwrap_or_default() {
+            if let Some(name) = &dir.prefix {
+                print_directory(name);
+            }
         }
     }
 
@@ -587,22 +593,26 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, dir
             if !key_matches_requested(directory_prefix, name, args) {
                 continue;
             }
-            if args.recurse {
-                let dir_path = basename(name);
-                if dir_path != directory_prefix.as_str() {
-                    for unseen_directory in seen_directories.add_key(dir_path) {
-                        print_directory(&unseen_directory);
+            if !args.only_files {
+                if args.recurse {
+                    let dir_path = basename(name);
+                    if dir_path != directory_prefix.as_str() {
+                        for unseen_directory in seen_directories.add_key(dir_path) {
+                            print_directory(&unseen_directory);
+                        }
                     }
                 }
             }
-            let name = printable_filename(name);
-            if args.long {
-                let date = file.last_modified()
-                    .and_then(|d| d.fmt(aws_smithy_types::date_time::Format::DateTime).ok())
-                    .unwrap_or_else(|| "".to_owned());
-                println!("{:size_width$} {date:DATE_LEN$} {name}", file.size());
-            } else {
-                println!("{name}");
+            if !args.only_directories {
+                let name = printable_filename(name);
+                if args.long {
+                    let date = file.last_modified()
+                        .and_then(|d| d.fmt(aws_smithy_types::date_time::Format::DateTime).ok())
+                        .unwrap_or_else(|| "".to_owned());
+                    println!("{:size_width$} {date:DATE_LEN$} {name}", file.size());
+                } else {
+                    println!("{name}");
+                }
             }
         }
     }
