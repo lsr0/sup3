@@ -35,7 +35,7 @@ Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/aw
 * [ ] Binary size reduction
 * [x] Upload arguments, e.g. ACLs
 * [ ] Config file support
-* [ ] List only files or only directories
+* [x] List only files or only directories
 * [x] List paging
 * [ ] Server to server copy
 * [x] Custom endpoints for other S3-compatible hosts (`--endpoint`)
