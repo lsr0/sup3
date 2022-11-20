@@ -588,7 +588,7 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, dir
         }
         let name = printable_filename(name);
         if args.long {
-            println!("{:size_width$} {:DATE_LEN$} {:storage_class_len$} {name}", 0, "", "", storage_class_len = storage_class_field_len());
+            println!("{:size_width$} {:DATE_LEN$} {:storage_class_len$} {name}", 0, "-", "-", storage_class_len = storage_class_field_len());
         } else {
             println!("{name}");
         }
