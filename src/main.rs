@@ -20,6 +20,10 @@ struct Arguments {
     /// Use custom endpoint URL for other S3 implementations
     endpoint: Option<http::uri::Uri>,
 
+    #[clap(long, global=true)]
+    /// Override config profile name
+    profile: Option<String>,
+
     #[clap(flatten)]
     shared: SharedOptions,
 }
@@ -315,7 +319,7 @@ impl MakeBuckets {
 async fn main() -> MainResult {
     let args = Arguments::parse();
 
-    let client = s3::init(args.region, args.endpoint).await;
+    let client = s3::init(args.region, args.endpoint, args.profile.as_deref()).await;
 
     let exit_code = match &args.command {
         Commands::Upload(upload) => upload.run(&client, &args.shared).await,

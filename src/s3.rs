@@ -65,16 +65,32 @@ pub struct OptionsAccessControl {
     pub grant_write_acp: Option<String>,
 }
 
-pub async fn init(region: Option<String>, endpoint: Option<http::uri::Uri>) -> Client {
+pub async fn init(region: Option<String>, endpoint: Option<http::uri::Uri>, profile_name: Option<&str>) -> Client {
     let provided_region = region.map(Region::new);
-    let region_provider = RegionProviderChain::first_try(provided_region)
-        .or_default_provider()
-        .or_else("eu-west-1");
-    let mut builder = aws_config::from_env().region(region_provider);
+
+    let mut region_provider_builder = aws_config::default_provider::region::Builder::default();
+    let mut credentials_provider_builder = aws_config::default_provider::credentials::Builder::default();
+    if let Some(profile_name) = profile_name {
+        region_provider_builder = region_provider_builder.profile_name(profile_name);
+        credentials_provider_builder = credentials_provider_builder.profile_name(profile_name);
+    }
+    let region_provider = region_provider_builder.build();
+    let credentials_provider = credentials_provider_builder.build();
+
+    let region_provider = match provided_region {
+        Some(r) => RegionProviderChain::first_try(r),
+        None => RegionProviderChain::first_try(region_provider).or_else("eu-west-1"),
+    };
+
+    let mut builder = aws_config::from_env()
+        .region(region_provider)
+        .credentials_provider(credentials_provider.await);
+
     if let Some(uri) = endpoint {
         let endpoint = aws_smithy_http::endpoint::Endpoint::mutable(uri);
         builder = builder.endpoint_resolver(endpoint);
     }
+
     let config = builder.load().await;
     let client = aws_sdk_s3::Client::new(&config);
     Client {
