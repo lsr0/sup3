@@ -552,6 +552,20 @@ fn is_requested_path_directory(response: &ListObjectsV2Output, requested_path: &
     false
 }
 
+// Replace if/when https://github.com/awslabs/smithy-rs/pull/2011 merged
+fn storage_class_field_len() -> usize {
+    use once_cell::race::OnceNonZeroUsize;
+    static STORAGE_CLASS_LEN: OnceNonZeroUsize = OnceNonZeroUsize::new();
+    STORAGE_CLASS_LEN.get_or_init(|| {
+        let len = aws_sdk_s3::model::StorageClass::values()
+            .iter()
+            .map(|s| s.len())
+            .max()
+            .unwrap_or(0);
+        std::num::NonZeroUsize::new(len.max(1)).expect("explicitly set 1 as minimum value")
+    }).get()
+}
+
 fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, directory_prefix: &Key, bucket: &str, seen_directories: &mut seen_directories::SeenDirectories) {
     let printable_filename = |key: &str| {
         if args.full_path {
@@ -574,7 +588,7 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, dir
         }
         let name = printable_filename(name);
         if args.long {
-            println!("{:size_width$} {:DATE_LEN$} {name}", 0, "");
+            println!("{:size_width$} {:DATE_LEN$} {:storage_class_len$} {name}", 0, "", "", storage_class_len = storage_class_field_len());
         } else {
             println!("{name}");
         }
@@ -609,7 +623,8 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, dir
                     let date = file.last_modified()
                         .and_then(|d| d.fmt(aws_smithy_types::date_time::Format::DateTime).ok())
                         .unwrap_or_else(|| "".to_owned());
-                    println!("{:size_width$} {date:DATE_LEN$} {name}", file.size());
+                    let storage_class = file.storage_class().unwrap_or(&aws_sdk_s3::model::ObjectStorageClass::Standard);
+                    println!("{:size_width$} {date:DATE_LEN$} {storage_class:storage_class_len$} {name}", file.size(), storage_class = storage_class.as_str(), storage_class_len = storage_class_field_len());
                 } else {
                     println!("{name}");
                 }
