@@ -566,16 +566,16 @@ fn storage_class_field_len() -> usize {
     }).get()
 }
 
-fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, directory_prefix: &Key, bucket: &str, seen_directories: &mut seen_directories::SeenDirectories) {
-    let printable_filename = |key: &str| {
-        if args.full_path {
-            format!("s3://{bucket}/{}", if key == "/" { "" } else { key })
-        } else {
-            let filename = key.strip_prefix(directory_prefix.as_str()).unwrap_or(key);
-            filename.to_owned()
-        }
+fn printable_filename<'a>(key: &'a str, bucket: &str, args: &ListArguments, directory_prefix: &Key) -> std::borrow::Cow<'a, str> {
+    let c: std::borrow::Cow<str> = if args.full_path {
+        format!("s3://{bucket}/{}", if key == "/" { "" } else { key }).into()
+    } else {
+        key.strip_prefix(directory_prefix.as_str()).unwrap_or(key).into()
     };
+    shell_escape::escape(c)
+}
 
+fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, directory_prefix: &Key, bucket: &str, seen_directories: &mut seen_directories::SeenDirectories) {
     let max_file_size = response.contents.as_ref()
         .and_then(|c| c.iter().map(|file| file.size()).max())
         .unwrap_or(0);
@@ -586,7 +586,7 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, dir
         if !key_matches_requested(directory_prefix, name, args) {
             return;
         }
-        let name = printable_filename(name);
+        let name = printable_filename(name, bucket, args, directory_prefix);
         if args.long {
             println!("{:size_width$} {:DATE_LEN$} {:storage_class_len$} {name}", 0, "-", "-", storage_class_len = storage_class_field_len());
         } else {
@@ -618,7 +618,7 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, dir
                 }
             }
             if !args.only_directories {
-                let name = printable_filename(name);
+                let name = printable_filename(name, bucket, args, directory_prefix);
                 if args.long {
                     let date = file.last_modified()
                         .and_then(|d| d.fmt(aws_smithy_types::date_time::Format::DateTime).ok())
