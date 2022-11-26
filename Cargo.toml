@@ -6,6 +6,10 @@ authors = ["Lindsay Roberts <os@lindsayr.com>"]
 license = "MIT"
 description = "A standalone S3 uploader"
 repository = "https://github.com/lsr0/sup3"
+homepage = "https://github.com/lsr0/sup3"
+readme = "README.md"
+keywords = ["s3", "cli", "aws"]
+categories = ["command-line-utilities", "filesystem"]
 
 [features]
 default = ["progress"]
