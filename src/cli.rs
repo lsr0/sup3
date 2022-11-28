@@ -47,17 +47,17 @@ mod progress_enabled {
     use super::*;
     pub type ProgressFn = Arc<dyn Fn(Update) + Send + Sync + 'static>;
 
-    pub const PREFIX_ERROR: console::Emoji = console::Emoji("❌ ", "");
-    pub const PREFIX_DONE: console::Emoji = console::Emoji("✅ ", "");
+    pub(super) const PREFIX_ERROR: console::Emoji = console::Emoji("❌ ", "");
+    pub(super) const PREFIX_DONE: console::Emoji = console::Emoji("✅ ", "");
     #[allow(unused)]
-    pub const PREFIX_DEBUG: console::Emoji = console::Emoji("🐛 ", "");
+    pub(super) const PREFIX_DEBUG: console::Emoji = console::Emoji("🐛 ", "");
 
-    pub struct Bar {
+    struct Bar {
         bar: indicatif::ProgressBar,
         name: String,
     }
     #[derive (Default)]
-    pub struct Bars {
+    struct Bars {
         bars: Vec<Bar>,
         incoming_task_count: usize,
     }
@@ -201,10 +201,10 @@ mod progress_disabled {
     pub fn empty_progress_fn(_update: Update) { }
     pub type ProgressFn = fn(Update);
 
-    pub const PREFIX_ERROR: &'static str = "❌ ";
-    pub const PREFIX_DONE: &'static str = "✅ ";
+    pub(super) const PREFIX_ERROR: &'static str = "❌ ";
+    pub(super) const PREFIX_DONE: &'static str = "✅ ";
     #[allow(unused)]
-    pub const PREFIX_DEBUG: &'static str = "🐛 ";
+    pub(super) const PREFIX_DEBUG: &'static str = "🐛 ";
 
     #[derive(Default)]
     pub struct Output {
