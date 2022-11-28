@@ -39,6 +39,7 @@ Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/aw
 * [x] List paging
 * [ ] Server to server copy
 * [x] Custom endpoints for other S3-compatible hosts (`--endpoint`)
+* [ ] A sync operation (as part of copy/up/down or separate)
 
 
 ## Commands
