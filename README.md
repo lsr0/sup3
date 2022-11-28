@@ -4,7 +4,7 @@
 
 **A standalone S3 tool**
 
-![Recording of download with progress enabled](/images/download_progress_anim_0.8.5.gif)
+![Recording of download with progress enabled](https://github.com/lsr0/sup3/blob/master/images/download_progress_anim_0.8.5.gif?raw=true)
 
 ## Warning
 This is **alpha**

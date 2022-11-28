@@ -1,3 +1,4 @@
+#![doc = include_str!("../README.md")]
 mod s3;
 mod shared_options;
 mod cli;
