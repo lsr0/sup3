@@ -88,8 +88,7 @@ pub async fn init(region: Option<String>, endpoint: Option<http::uri::Uri>, prof
         .credentials_provider(credentials_provider.await);
 
     if let Some(uri) = endpoint {
-        let endpoint = aws_smithy_http::endpoint::Endpoint::mutable(uri);
-        builder = builder.endpoint_resolver(endpoint);
+        builder = builder.endpoint_url(uri.to_string());
     }
 
     let config = builder.load().await;
