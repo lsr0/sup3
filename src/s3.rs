@@ -567,19 +567,17 @@ fn is_requested_path_directory(response: &ListObjectsV2Output, requested_path: &
     false
 }
 
-// Replace if/when https://github.com/awslabs/smithy-rs/pull/2011 merged
-fn storage_class_field_len() -> usize {
-    use once_cell::race::OnceNonZeroUsize;
-    static STORAGE_CLASS_LEN: OnceNonZeroUsize = OnceNonZeroUsize::new();
-    STORAGE_CLASS_LEN.get_or_init(|| {
-        let len = aws_sdk_s3::model::StorageClass::values()
-            .iter()
-            .map(|s| s.len())
-            .max()
-            .unwrap_or(0);
-        std::num::NonZeroUsize::new(len.max(1)).expect("explicitly set 1 as minimum value")
-    }).get()
+const fn storage_class_field_len() -> usize {
+    let mut i = 0;
+    let mut max_field_len = 0;
+    while i < aws_sdk_s3::model::StorageClass::values().len() {
+        let field_len = aws_sdk_s3::model::StorageClass::values()[i].len();
+        if field_len > max_field_len { max_field_len = field_len }
+        i += 1
+    }
+    max_field_len
 }
+const STORAGE_CLASS_FIELD_LEN: usize = storage_class_field_len();
 
 fn printable_filename<'a>(key: &'a str, bucket: &str, args: &ListArguments, directory_prefix: &Key) -> std::borrow::Cow<'a, str> {
     let c: std::borrow::Cow<str> = if args.full_path {
@@ -603,7 +601,7 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, dir
         }
         let name = printable_filename(name, bucket, args, directory_prefix);
         if args.long {
-            println!("{:size_width$} {:DATE_LEN$} {:storage_class_len$} {name}", 0, "-", "-", storage_class_len = storage_class_field_len());
+            println!("{:size_width$} {:DATE_LEN$} {:storage_class_len$} {name}", 0, "-", "-", storage_class_len = STORAGE_CLASS_FIELD_LEN);
         } else {
             println!("{name}");
         }
@@ -639,7 +637,7 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, dir
                         .and_then(|d| d.fmt(aws_smithy_types::date_time::Format::DateTime).ok())
                         .unwrap_or_else(|| "".to_owned());
                     let storage_class = file.storage_class().unwrap_or(&aws_sdk_s3::model::ObjectStorageClass::Standard);
-                    println!("{:size_width$} {date:DATE_LEN$} {storage_class:storage_class_len$} {name}", file.size(), storage_class = storage_class.as_str(), storage_class_len = storage_class_field_len());
+                    println!("{:size_width$} {date:DATE_LEN$} {storage_class:storage_class_len$} {name}", file.size(), storage_class = storage_class.as_str(), storage_class_len = STORAGE_CLASS_FIELD_LEN);
                 } else {
                     println!("{name}");
                 }
