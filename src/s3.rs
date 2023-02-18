@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use aws_smithy_http::body::SdkBody;
 use aws_types::region::Region;
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{types::ByteStream, output::ListObjectsV2Output};
@@ -128,8 +129,6 @@ pub enum Error {
     S3(#[from] aws_sdk_s3::Error),
     #[error("S3 put error: {0}")]
     Put(#[from] aws_sdk_s3::error::PutObjectError),
-    #[error("accessing local file: {0}")]
-    File(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error("no filename in either source or destination")]
     NoFilename,
     #[error("specified local filename not unicode")]
@@ -142,27 +141,6 @@ pub enum Error {
     NoSuchKey(Uri),
     #[error("io: {0}")]
     Io(std::io::Error),
-}
-
-#[derive(Clone)]
-struct ProgressCallback(cli::ProgressFn);
-
-impl ProgressCallback {
-    pub fn wrap(delegate: cli::ProgressFn) -> Box<dyn aws_smithy_http::callback::BodyCallback> {
-        Box::new(ProgressCallback(delegate))
-    }
-}
-
-type BoxError = Box<dyn std::error::Error + Send + Sync>;
-impl aws_smithy_http::callback::BodyCallback for ProgressCallback {
-    fn update(&mut self, bytes: &[u8]) -> Result<(), BoxError> {
-        (self.0)(cli::Update::StateProgress(bytes.len()));
-        Ok(())
-    }
-
-    fn make_new(&self) -> Box<dyn aws_smithy_http::callback::BodyCallback> {
-        Box::new(self.clone())
-    }
 }
 
 #[derive (Clone)]
@@ -266,15 +244,38 @@ impl<'a> RecursiveListStream<'a> {
     }
 }
 
+use futures::future::TryFutureExt;
+
+fn path_to_sdk_body(path: PathBuf, progress: cli::ProgressFn) -> SdkBody
+{
+    let open_fut = async move {
+        let file = tokio::fs::File::open(path).await?;
+        Ok(tokio_util::io::ReaderStream::new(file))
+    };
+    let flattened = open_fut.try_flatten_stream();
+    let inspected = flattened.inspect_ok(move |bytes| progress(cli::Update::StateProgress(bytes.len())));
+    let hyper_body = hyper::body::Body::wrap_stream(inspected);
+    SdkBody::from(hyper_body)
+}
+
+fn path_to_bytestream(path: PathBuf, progress: cli::ProgressFn) -> ByteStream
+{
+    let retryable = SdkBody::retryable(move || {
+        progress(cli::Update::StateRetried);
+        path_to_sdk_body(path.clone(), progress.clone())
+    });
+    ByteStream::from(retryable)
+}
+
 impl Client {
     pub async fn put(&self, verbose: bool, options_upload: &OptionsUpload, path: &std::path::Path, s3_uri: &Uri, progress_fn: cli::ProgressFn) -> Result<String, Error> {
         progress_fn(cli::Update::State("opening"));
-        let mut stream = ByteStream::from_path(path)
-            .await
-            .map_err(|e| Error::File(e.into()))?;
+        let length = tokio::fs::metadata(path)
+            .await?
+            .len();
+        let stream = path_to_bytestream(path.to_path_buf(), progress_fn.clone());
         let mut key = s3_uri.key.clone();
-        let (_, size_hint) = stream.size_hint();
-        stream.with_body_callback(ProgressCallback::wrap(progress_fn.clone()));
+        let size_hint = Some(length as usize);
         if s3_uri.filename().is_none() {
             let local_filename = path.file_name()
                 .ok_or(Error::NoFilename)?
@@ -291,12 +292,11 @@ impl Client {
             };
         }
         progress_fn(cli::Update::State("uploading"));
-        if let Some(size) = size_hint {
-            progress_fn(cli::Update::StateLength(size));
-        }
+        progress_fn(cli::Update::StateLength(length as usize));
         self.client.put_object()
             .bucket(s3_uri.bucket.clone())
             .key(key.to_string())
+            .content_length(length as i64)
             .set_acl(options_upload.canned_acl.to_owned())
             .set_grant_read(options_upload.access_control.grant_read.to_owned())
             .set_grant_full_control(options_upload.access_control.grant_full.to_owned())
