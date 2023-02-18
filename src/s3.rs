@@ -128,6 +128,8 @@ pub enum Error {
     S3(#[from] aws_sdk_s3::Error),
     #[error("S3 put error: {0}")]
     Put(#[from] aws_sdk_s3::error::PutObjectError),
+    #[error("S3 get error: {0}")]
+    Get(#[from] aws_sdk_s3::error::GetObjectError),
     #[error("no filename in either source or destination")]
     NoFilename,
     #[error("specified local filename not unicode")]
@@ -135,7 +137,7 @@ pub enum Error {
     #[error("local file: {0}")]
     LocalFile(#[from] std::io::Error),
     #[error("streaming: {0}")]
-    Streaming(#[from] aws_smithy_http::byte_stream::Error),
+    Streaming(#[from] aws_smithy_http::byte_stream::error::Error),
     #[error("no such remote file: {0}")]
     NoSuchKey(Uri),
     #[error("io: {0}")]
@@ -516,13 +518,11 @@ impl Client {
 }
 
 fn error_from_get(uri: &Uri, sdk: aws_sdk_s3::types::SdkError<aws_sdk_s3::error::GetObjectError>) -> Error {
-    if let aws_sdk_s3::types::SdkError::ServiceError{ref err, ..} = sdk {
-        if err.is_no_such_key() {
-            return Error::NoSuchKey(uri.clone());
-        }
+    use aws_sdk_s3::error::*;
+    match sdk.into_service_error() {
+        GetObjectError{kind: GetObjectErrorKind::NoSuchKey(_), ..} => Error::NoSuchKey(uri.clone()),
+        err @ _ => Error::Get(err),
     }
-
-    Error::S3(sdk.into())
 }
 
 const DATE_LEN: usize = "2022-01-01T00:00:00Z".len();
