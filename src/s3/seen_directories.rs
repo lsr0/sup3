@@ -38,7 +38,7 @@ impl SeenDirectories {
             }
             missing.push(search_key.to_owned());
             search_key = up_directory(search_key);
-            if search_key.find('/').is_none() {
+            if search_key.is_empty() {
                 break;
             }
         }
