@@ -124,8 +124,6 @@ pub struct ListArguments {
 
 #[derive (thiserror::Error, Debug)]
 pub enum Error {
-    #[error("S3: {0}")]
-    S3(#[from] aws_sdk_s3::Error),
     #[error("S3 put error: {0}")]
     Put(#[from] aws_sdk_s3::error::PutObjectError),
     #[error("S3 get error: {0}")]
@@ -142,6 +140,29 @@ pub enum Error {
     NoSuchKey(Uri),
     #[error("io: {0}")]
     Io(std::io::Error),
+    #[error("{0}: {1}")]
+    S3SdkError(&'static str, Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error("{0}: {1:?}")]
+    S3SdkErrorDebug(&'static str, Box<dyn std::error::Error + Send + Sync + 'static>),
+}
+
+impl<E: std::error::Error + Send + Sync + 'static> From<aws_smithy_http::result::SdkError<E>> for Error {
+    fn from(err: aws_smithy_http::result::SdkError<E>) -> Self {
+        use aws_smithy_http::result::SdkError;
+        let (prefix, print_debug) = match err {
+            SdkError::ConstructionFailure(_) => ("S3 request construction failure", true),
+            SdkError::TimeoutError(_) => ("S3 timeout", true),
+            SdkError::ResponseError(_) => ("S3 response error", true),
+            SdkError::DispatchFailure(_) => ("S3 dispatch failure", true),
+            SdkError::ServiceError(_) => ("S3 service error", false),
+            _ => ("S3 other error", true),
+        };
+        match (err.into_source(), print_debug) {
+            (Ok(source), false) => Error::S3SdkError(prefix, source),
+            (Ok(source), true) => Error::S3SdkErrorDebug(prefix, source),
+            (Err(orig), _) => orig.into(),
+        }
+    }
 }
 
 #[derive (Clone)]
@@ -306,8 +327,7 @@ impl Client {
             .set_storage_class(options_upload.class.to_owned())
             .body(stream)
             .send()
-            .await
-            .map_err(|e| -> aws_sdk_s3::Error { e.into() } )?;
+            .await?;
         progress_fn(cli::Update::Finished());
         Ok(destination)
     }
@@ -395,12 +415,11 @@ impl Client {
             .bucket(s3_uri.bucket.clone())
             .key(s3_uri.key.to_string())
             .send()
-            .await
-            .map_err(|e| -> aws_sdk_s3::Error { e.into() } )?;
+            .await?;
         Ok(())
     }
 
-    async fn ls_inner(&self, bucket: &str, key: &Key, delimiter: Option<char>, continuation: Option<String>) -> Result<ListObjectsV2Output, aws_sdk_s3::Error> {
+    async fn ls_inner(&self, bucket: &str, key: &Key, delimiter: Option<char>, continuation: Option<String>) -> Result<ListObjectsV2Output, Error> {
         self.client.list_objects_v2()
             .bucket(bucket.to_owned())
             .prefix(key.to_string())
@@ -408,7 +427,7 @@ impl Client {
             .set_continuation_token(continuation)
             .send()
             .await
-            .map_err(|e| -> aws_sdk_s3::Error { e.into() } )
+            .map_err(|e| e.into())
     }
     pub async fn ls(&self, opts: &SharedOptions, args: &ListArguments, s3_uri: &Uri) -> Result<(), Error> {
         if opts.verbose {
@@ -469,8 +488,7 @@ impl Client {
         }
         let response = self.client.list_buckets()
             .send()
-            .await
-            .map_err(|e| -> aws_sdk_s3::Error { e.into() } )?;
+            .await?;
 
         for bucket in response.buckets.unwrap_or_default() {
             if let Some(name) = bucket.name {
@@ -511,8 +529,7 @@ impl Client {
             .set_grant_read_acp(options.access_control.grant_read_acp.to_owned())
             .set_grant_write_acp(options.access_control.grant_write_acp.to_owned())
             .send()
-            .await
-            .map_err(|e| -> aws_sdk_s3::Error { e.into() } )?;
+            .await?;
         Ok(())
     }
 }
