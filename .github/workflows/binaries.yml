@@ -10,6 +10,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         cross_arch_long: ['']
+        build_suffix: ['']
         include:
           - os: ubuntu-latest
             cross_arch_long: aarch64-unknown-linux-gnu
@@ -17,6 +18,14 @@ jobs:
           - os: macos-latest
             cross_arch_long: aarch64-apple-darwin
             cross_arch: aarch64
+          - os: ubuntu-latest
+            cross_arch_long: x86_64-unknown-linux-musl
+            cross_arch: x86_64
+            build_suffix: -musl
+          - os: ubuntu-latest
+            cross_arch_long: aarch64-unknown-linux-musl
+            cross_arch: aarch64
+            build_suffix: -musl
     runs-on: ${{ matrix.os }}
     steps:
       - name: 'Checkout'
@@ -39,7 +48,7 @@ jobs:
         env:
           target_path_component: ${{ matrix.cross_arch_long && format('/{0}', matrix.cross_arch_long) || '' }}
         with:
-          name: sup3-${{ runner.os }}-${{ matrix.cross_arch || runner.arch }}
+          name: sup3-${{ runner.os }}-${{ matrix.cross_arch || runner.arch }}${{ matrix.build_suffix}}
           path: target${{ env.target_path_component }}/release-small/sup3*
           if-no-files-found: error
 
@@ -61,6 +70,8 @@ jobs:
           tar cfz release/sup3-macos-aarch64-$GITHUB_REF_NAME.tar.gz -C job_artifacts/sup3-macOS-aarch64 sup3
           tar cfz release/sup3-linux-aarch64-$GITHUB_REF_NAME.tar.gz -C job_artifacts/sup3-Linux-aarch64 sup3
           zip release/sup3-windows-x86_64-$GITHUB_REF_NAME.zip job_artifacts/sup3-Windows-X64/sup3.exe --junk-paths
+          tar cfz release/sup3-linux-x86_64-musl-$GITHUB_REF_NAME.tar.gz -C job_artifacts/sup3-Linux-X64-musl sup3
+          tar cfz release/sup3-linux-aarch64-musl-$GITHUB_REF_NAME.tar.gz -C job_artifacts/sup3-Linux-aarch64-musl sup3
 
       - name: Release
         uses: softprops/action-gh-release@v1
