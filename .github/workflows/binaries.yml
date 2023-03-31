@@ -70,7 +70,7 @@ jobs:
           tar cfz release/sup3-macos-aarch64-$GITHUB_REF_NAME.tar.gz -C job_artifacts/sup3-macOS-aarch64 sup3
           tar cfz release/sup3-linux-aarch64-$GITHUB_REF_NAME.tar.gz -C job_artifacts/sup3-Linux-aarch64 sup3
           zip release/sup3-windows-x86_64-$GITHUB_REF_NAME.zip job_artifacts/sup3-Windows-X64/sup3.exe --junk-paths
-          tar cfz release/sup3-linux-x86_64-musl-$GITHUB_REF_NAME.tar.gz -C job_artifacts/sup3-Linux-X64-musl sup3
+          tar cfz release/sup3-linux-x86_64-musl-$GITHUB_REF_NAME.tar.gz -C job_artifacts/sup3-Linux-x86_64-musl sup3
           tar cfz release/sup3-linux-aarch64-musl-$GITHUB_REF_NAME.tar.gz -C job_artifacts/sup3-Linux-aarch64-musl sup3
 
       - name: Release
