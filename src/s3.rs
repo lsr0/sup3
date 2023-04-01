@@ -14,6 +14,7 @@ use crate::cli;
 mod uri;
 mod partial_file;
 mod seen_directories;
+mod glob;
 
 pub use uri::{Uri, UriError, Key};
 
