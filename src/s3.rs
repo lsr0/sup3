@@ -14,8 +14,11 @@ use crate::cli;
 mod uri;
 mod partial_file;
 mod seen_directories;
+mod glob;
 
 pub use uri::{Uri, UriError, Key};
+
+pub use glob::Options as GlobOptions;
 
 #[derive(Clone)]
 pub struct Client {
@@ -120,6 +123,17 @@ pub struct ListArguments {
     only_directories: bool,
     #[clap(long, short='I')]
     only_files: bool,
+    #[clap(flatten)]
+    glob_options: GlobOptions,
+}
+
+impl ListArguments {
+    pub fn validate(&self) -> Result<(), (clap::ErrorKind, &'static str)> {
+        if self.glob_options.is_enabled() && self.recurse {
+            return Err((clap::ErrorKind::ArgumentConflict, "recurse with glob currently not supported"));
+        }
+        Ok(())
+    }
 }
 
 #[derive (thiserror::Error, Debug)]
@@ -433,13 +447,24 @@ impl Client {
         if opts.verbose {
             println!("🏁 listing s3://{}/{}... ", s3_uri.bucket, s3_uri.key);
         }
-        let separator = if args.recurse { None } else { Some('/') };
 
-        let mut response = self.ls_inner(&s3_uri.bucket, &s3_uri.key, separator, None)
+        let glob = glob::as_key_and_glob(&s3_uri.key, &args.glob_options);
+
+        let key = match &glob {
+            None => &s3_uri.key,
+            Some(glob) => glob.prefix(),
+        };
+
+        let has_recursive_glob = glob.as_ref().map(|g| g.has_recursive_wildcard()).unwrap_or(false);
+
+        let separator = if args.recurse || has_recursive_glob { None } else { Some('/') };
+
+        let mut response = self.ls_inner(&s3_uri.bucket, &key, separator, None)
             .await?;
-        let mut relative_root = s3_uri.key.clone();
+        let mut relative_root = key.clone();
 
-        if !args.directory {
+        // TODO: Check on glob is none thing
+        if !args.directory && glob.is_none() {
             if let Some(directories) = &response.common_prefixes {
                 let file_count = &response.contents
                     .as_ref()
@@ -465,18 +490,18 @@ impl Client {
         };
 
         let mut seen_directories = seen_directories::SeenDirectories::new(&relative_root);
-        ls_consume_response(args, &response, &directory_prefix, &s3_uri.bucket, &mut seen_directories);
+        ls_consume_response(args, &response, &directory_prefix, &s3_uri.bucket, &mut seen_directories, glob.as_ref());
 
         let mut continuation_token = response.next_continuation_token;
         let mut page = 2;
         while continuation_token.is_some() {
             if opts.verbose {
-                println!("🏁 listing s3://{}/{} (page {page})... ", s3_uri.bucket, s3_uri.key);
+                println!("🏁 listing s3://{}/{} (page {page})... ", s3_uri.bucket, key);
             }
             let continuation_response = self.ls_inner(&s3_uri.bucket, &relative_root, separator, continuation_token.take())
                 .await?;
 
-            ls_consume_response(args, &continuation_response, &relative_root, &s3_uri.bucket, &mut seen_directories);
+            ls_consume_response(args, &continuation_response, &relative_root, &s3_uri.bucket, &mut seen_directories, glob.as_ref());
             continuation_token = continuation_response.next_continuation_token;
             page += 1;
         }
@@ -548,13 +573,21 @@ fn basename(path: &str) -> &str {
     path.trim_end_matches(|c| c != '/')
 }
 
-fn key_matches_requested(requested: &Key, key: &str, args: &ListArguments) -> bool {
+fn key_matches_requested(requested: &Key, key: &str, args: &ListArguments, glob: Option<&glob::Glob>) -> bool {
     if args.substring {
         return true
     }
 
     if requested.as_str() == key {
         return true;
+    }
+
+    /* TODO: When adding support for glob + recursive
+     * add matching against a list of recursively matched
+     * directories here
+     */
+    if let Some(glob) = glob {
+        return glob.matches(key)
     }
 
     let requested_directory = requested.is_explicitly_directory();
@@ -605,7 +638,7 @@ fn printable_filename<'a>(key: &'a str, bucket: &str, args: &ListArguments, dire
     shell_escape::escape(c)
 }
 
-fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, directory_prefix: &Key, bucket: &str, seen_directories: &mut seen_directories::SeenDirectories) {
+fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, directory_prefix: &Key, bucket: &str, seen_directories: &mut seen_directories::SeenDirectories, glob: Option<&glob::Glob>) {
     let max_file_size = response.contents.as_ref()
         .and_then(|c| c.iter().map(|file| file.size()).max())
         .unwrap_or(0);
@@ -613,7 +646,7 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, dir
     let size_width = cli::digit_count(max_file_size as u64);
 
     let print_directory = |name: &str| {
-        if !key_matches_requested(directory_prefix, name, args) {
+        if !key_matches_requested(directory_prefix, name, args, glob) {
             return;
         }
         let name = printable_filename(name, bucket, args, directory_prefix);
@@ -634,11 +667,11 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, dir
 
     for file in response.contents().unwrap_or_default() {
         if let Some(name) = &file.key {
-            if !key_matches_requested(directory_prefix, name, args) {
+            if !key_matches_requested(directory_prefix, name, args, glob) {
                 continue;
             }
             if !args.only_files {
-                if args.recurse {
+                if args.recurse || glob.is_some() {
                     let dir_path = basename(name);
                     if dir_path != directory_prefix.as_str() {
                         for unseen_directory in seen_directories.add_key(dir_path) {

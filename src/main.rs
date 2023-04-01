@@ -196,6 +196,13 @@ impl Remove {
 
 impl ListFiles {
     async fn run(&self, client: &s3::Client, opts: &SharedOptions) -> MainResult {
+        if let Err(val_err) = self.command_args.validate() {
+                use clap::CommandFactory;
+                let _ = Arguments::command()
+                    .error(val_err.0, val_err.1)
+                    .print();
+            return MainResult::ErrorArguments;
+        };
         for uri in &self.remote_paths {
             if let Err(e) = client.ls(opts, &self.command_args, uri).await {
                 eprintln!("❌: failed to list {uri}: {e}");
