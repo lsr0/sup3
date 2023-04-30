@@ -48,7 +48,14 @@ impl<'a> Glob<'a> {
     }
 
     fn glob_has_resursive_wildcard(glob_str: &str) -> bool {
-        glob_str.contains("**")
+        let Some(index) = glob_str.find("**") else {
+            return false
+        };
+        match index {
+            0 => true,
+            1 => glob_str.chars().nth(0) != Some('\\'),
+            _ => glob_str.chars().nth(index - 2) != Some('\\') || glob_str.chars().nth(index - 1) == Some('\\'),
+        }
     }
 }
 

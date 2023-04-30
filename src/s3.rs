@@ -658,7 +658,7 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, dir
                 continue;
             }
             if !args.only_files {
-                if args.recurse {
+                if args.recurse || glob.is_some() {
                     let dir_path = basename(name);
                     if dir_path != directory_prefix.as_str() {
                         for unseen_directory in seen_directories.add_key(dir_path) {
