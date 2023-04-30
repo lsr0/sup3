@@ -636,9 +636,6 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, dir
         if !key_matches_requested(directory_prefix, name, args, glob) {
             return;
         }
-        //if !matches_glob(name) {
-        //    return;
-        //}
         let name = printable_filename(name, bucket, args, directory_prefix);
         if args.long {
             println!("{:size_width$} {:DATE_LEN$} {:storage_class_len$} {name}", 0, "-", "-", storage_class_len = STORAGE_CLASS_FIELD_LEN);
@@ -671,9 +668,6 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, dir
                 }
             }
             if !args.only_directories {
-                //if !matches_glob(name) {
-                //    continue;
-                //}
                 let name = printable_filename(name, bucket, args, directory_prefix);
                 if args.long {
                     let date = file.last_modified()
