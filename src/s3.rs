@@ -18,6 +18,8 @@ mod glob;
 
 pub use uri::{Uri, UriError, Key};
 
+pub use glob::Options as GlobOptions;
+
 #[derive(Clone)]
 pub struct Client {
     client: aws_sdk_s3::Client,
@@ -430,12 +432,12 @@ impl Client {
             .await
             .map_err(|e| e.into())
     }
-    pub async fn ls(&self, opts: &SharedOptions, args: &ListArguments, s3_uri: &Uri) -> Result<(), Error> {
+    pub async fn ls(&self, opts: &SharedOptions, args: &ListArguments, s3_uri: &Uri, glob_options: &glob::Options) -> Result<(), Error> {
         if opts.verbose {
             println!("🏁 listing s3://{}/{}... ", s3_uri.bucket, s3_uri.key);
         }
 
-        let glob = glob::as_key_and_glob(&s3_uri.key);
+        let glob = glob::as_key_and_glob(&s3_uri.key, glob_options);
 
         let key = match &glob {
             None => &s3_uri.key,

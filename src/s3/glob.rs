@@ -2,6 +2,20 @@ use crate::s3::uri;
 
 use wax::Pattern;
 
+#[derive(clap::ArgEnum, Debug, Clone, PartialEq)]
+pub enum GlobOption {
+    Auto,
+    On,
+    Off,
+}
+
+#[derive(clap::Args, Debug, Clone, PartialEq)]
+pub struct Options {
+    /// Enable glob path specification (auto enables when glob characters found)
+    #[clap(long, short='G', arg_enum, default_value="auto")]
+    glob: GlobOption,
+}
+
 #[derive(Debug)]
 pub struct Glob<'a> {
     prefix: uri::Key,
@@ -10,24 +24,32 @@ pub struct Glob<'a> {
 }
 
 impl<'a> Glob<'a> {
-    pub fn new(key: &'a uri::Key) -> Option<Glob<'a>> {
-        if key.len() == 0 {
+    pub fn new(key: &'a uri::Key, options: &Options) -> Option<Glob<'a>> {
+        if options.glob == GlobOption::Off {
             return None;
         }
+
+        if key.len() == 0 && options.glob != GlobOption::On {
+            return None;
+        }
+
         let glob = wax::Glob::new(key.as_str()).ok()?;
         let (prefix, glob) = glob.partition();
 
-        if prefix.as_os_str() == key.as_str() {
-            return None;
-        }
+        if options.glob == GlobOption::Auto {
+            if prefix.as_os_str() == key.as_str() {
+                return None;
+            }
 
-        // wax::Glob stops prefixes at slash
-        let key_without_slash = key.as_str().strip_suffix('/').unwrap_or(key.as_str());
-        if prefix.as_os_str() == key_without_slash {
-            return None;
+            // wax::Glob stops prefixes at slash
+            let key_without_slash = key.as_str().strip_suffix('/').unwrap_or(key.as_str());
+            if prefix.as_os_str() == key_without_slash {
+                return None;
+            }
         }
 
         let prefix = uri::Key::new(prefix.as_os_str().to_str()?.to_string());
+
         let has_recursive_wildcard = Self::glob_has_resursive_wildcard(key.as_str());
         Some(Glob{prefix, glob, has_recursive_wildcard})
     }
@@ -63,6 +85,6 @@ impl<'a> Glob<'a> {
     }
 }
 
-pub fn as_key_and_glob<'a>(key: &'a uri::Key) -> Option<Glob<'a>> {
-    Glob::new(key)
+pub fn as_key_and_glob<'a>(key: &'a uri::Key, options: &Options) -> Option<Glob<'a>> {
+    Glob::new(key, options)
 }

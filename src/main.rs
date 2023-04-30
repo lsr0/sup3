@@ -86,6 +86,8 @@ struct ListFiles {
     remote_paths: Vec<s3::Uri>,
     #[clap(flatten)]
     command_args: s3::ListArguments,
+    #[clap(flatten)]
+    glob_options: s3::GlobOptions,
 }
 
 #[derive(Args, Debug)]
@@ -197,7 +199,7 @@ impl Remove {
 impl ListFiles {
     async fn run(&self, client: &s3::Client, opts: &SharedOptions) -> MainResult {
         for uri in &self.remote_paths {
-            if let Err(e) = client.ls(opts, &self.command_args, uri).await {
+            if let Err(e) = client.ls(opts, &self.command_args, uri, &self.glob_options).await {
                 eprintln!("❌: failed to list {uri}: {e}");
                 return MainResult::ErrorSomeOperationsFailed;
             }
