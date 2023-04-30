@@ -6,6 +6,7 @@ use wax::Pattern;
 pub struct Glob<'a> {
     prefix: uri::Key,
     glob: wax::Glob<'a>,
+    has_recursive_wildcard: bool,
 }
 
 impl<'a> Glob<'a> {
@@ -27,7 +28,8 @@ impl<'a> Glob<'a> {
         }
 
         let prefix = uri::Key::new(prefix.as_os_str().to_str()?.to_string());
-        Some(Glob{prefix, glob})
+        let has_recursive_wildcard = Self::glob_has_resursive_wildcard(key.as_str());
+        Some(Glob{prefix, glob, has_recursive_wildcard})
     }
     pub fn prefix(&self) -> &uri::Key {
         &self.prefix
@@ -40,6 +42,13 @@ impl<'a> Glob<'a> {
         let without_trailing_slash = without_prefix_slash.strip_suffix('/').unwrap_or(without_prefix_slash);
         let without_trailing_slash = dbg!(without_trailing_slash);
         self.glob.is_match(without_trailing_slash)
+    }
+    pub fn has_recursive_wildcard(&self) -> bool {
+        self.has_recursive_wildcard
+    }
+
+    fn glob_has_resursive_wildcard(glob_str: &str) -> bool {
+        glob_str.contains("**")
     }
 }
 

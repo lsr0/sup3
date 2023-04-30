@@ -434,7 +434,6 @@ impl Client {
         if opts.verbose {
             println!("🏁 listing s3://{}/{}... ", s3_uri.bucket, s3_uri.key);
         }
-        let separator = if args.recurse { None } else { Some('/') };
 
         let glob = glob::as_key_and_glob(&s3_uri.key);
 
@@ -442,8 +441,10 @@ impl Client {
             None => &s3_uri.key,
             Some(glob) => glob.prefix(),
         };
-        dbg!(&key);
-        dbg!(&glob);
+
+        let has_recursive_glob = glob.as_ref().map(|g| g.has_recursive_wildcard()).unwrap_or(false);
+
+        let separator = if args.recurse || has_recursive_glob { None } else { Some('/') };
 
         let mut response = self.ls_inner(&s3_uri.bucket, &key, separator, None)
             .await?;
@@ -559,13 +560,21 @@ fn basename(path: &str) -> &str {
     path.trim_end_matches(|c| c != '/')
 }
 
-fn key_matches_requested(requested: &Key, key: &str, args: &ListArguments) -> bool {
+fn key_matches_requested(requested: &Key, key: &str, args: &ListArguments, glob: Option<&glob::Glob>) -> bool {
     if args.substring {
         return true
     }
 
     if requested.as_str() == key {
         return true;
+    }
+
+    /* TODO: When adding support for glob + recursive
+     * add matching against a list of recursively matched
+     * directories here
+     */
+    if let Some(glob) = glob {
+        return glob.matches(key)
     }
 
     let requested_directory = requested.is_explicitly_directory();
@@ -623,20 +632,13 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, dir
 
     let size_width = cli::digit_count(max_file_size as u64);
 
-    let matches_glob = |name: &str| {
-        match &glob {
-            None => true,
-            Some(glob) => glob.matches(name),
-        }
-    };
-
     let print_directory = |name: &str| {
-        if !key_matches_requested(directory_prefix, name, args) {
+        if !key_matches_requested(directory_prefix, name, args, glob) {
             return;
         }
-        if !matches_glob(name) {
-            return;
-        }
+        //if !matches_glob(name) {
+        //    return;
+        //}
         let name = printable_filename(name, bucket, args, directory_prefix);
         if args.long {
             println!("{:size_width$} {:DATE_LEN$} {:storage_class_len$} {name}", 0, "-", "-", storage_class_len = STORAGE_CLASS_FIELD_LEN);
@@ -655,7 +657,7 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, dir
 
     for file in response.contents().unwrap_or_default() {
         if let Some(name) = &file.key {
-            if !key_matches_requested(directory_prefix, name, args) {
+            if !key_matches_requested(directory_prefix, name, args, glob) {
                 continue;
             }
             if !args.only_files {
@@ -669,9 +671,9 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, dir
                 }
             }
             if !args.only_directories {
-                if !matches_glob(name) {
-                    continue;
-                }
+                //if !matches_glob(name) {
+                //    continue;
+                //}
                 let name = printable_filename(name, bucket, args, directory_prefix);
                 if args.long {
                     let date = file.last_modified()
