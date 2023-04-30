@@ -51,9 +51,13 @@ impl<'a> Glob<'a> {
         let Some(index) = glob_str.find("**") else {
             return false
         };
+        // Check not escaped
         match index {
             0 => true,
+            // '\**' => not a recursive wildcard
             1 => glob_str.chars().nth(0) != Some('\\'),
+            // '\**' => not a recursive wildcard
+            // '\\**' => is a recursive wildcard (prefixed by a literal backslash)
             _ => glob_str.chars().nth(index - 2) != Some('\\') || glob_str.chars().nth(index - 1) == Some('\\'),
         }
     }
