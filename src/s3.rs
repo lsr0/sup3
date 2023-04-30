@@ -436,11 +436,21 @@ impl Client {
         }
         let separator = if args.recurse { None } else { Some('/') };
 
-        let mut response = self.ls_inner(&s3_uri.bucket, &s3_uri.key, separator, None)
-            .await?;
-        let mut relative_root = s3_uri.key.clone();
+        let glob = glob::as_key_and_glob(&s3_uri.key);
 
-        if !args.directory {
+        let key = match &glob {
+            None => &s3_uri.key,
+            Some(glob) => glob.prefix(),
+        };
+        dbg!(&key);
+        dbg!(&glob);
+
+        let mut response = self.ls_inner(&s3_uri.bucket, &key, separator, None)
+            .await?;
+        let mut relative_root = key.clone();
+
+        // TODO: Check on glob is none thing
+        if !args.directory && glob.is_none() {
             if let Some(directories) = &response.common_prefixes {
                 let file_count = &response.contents
                     .as_ref()
@@ -466,18 +476,18 @@ impl Client {
         };
 
         let mut seen_directories = seen_directories::SeenDirectories::new(&relative_root);
-        ls_consume_response(args, &response, &directory_prefix, &s3_uri.bucket, &mut seen_directories);
+        ls_consume_response(args, &response, &directory_prefix, &s3_uri.bucket, &mut seen_directories, glob.as_ref());
 
         let mut continuation_token = response.next_continuation_token;
         let mut page = 2;
         while continuation_token.is_some() {
             if opts.verbose {
-                println!("🏁 listing s3://{}/{} (page {page})... ", s3_uri.bucket, s3_uri.key);
+                println!("🏁 listing s3://{}/{} (page {page})... ", s3_uri.bucket, key);
             }
             let continuation_response = self.ls_inner(&s3_uri.bucket, &relative_root, separator, continuation_token.take())
                 .await?;
 
-            ls_consume_response(args, &continuation_response, &relative_root, &s3_uri.bucket, &mut seen_directories);
+            ls_consume_response(args, &continuation_response, &relative_root, &s3_uri.bucket, &mut seen_directories, glob.as_ref());
             continuation_token = continuation_response.next_continuation_token;
             page += 1;
         }
@@ -606,15 +616,25 @@ fn printable_filename<'a>(key: &'a str, bucket: &str, args: &ListArguments, dire
     shell_escape::escape(c)
 }
 
-fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, directory_prefix: &Key, bucket: &str, seen_directories: &mut seen_directories::SeenDirectories) {
+fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, directory_prefix: &Key, bucket: &str, seen_directories: &mut seen_directories::SeenDirectories, glob: Option<&glob::Glob>) {
     let max_file_size = response.contents.as_ref()
         .and_then(|c| c.iter().map(|file| file.size()).max())
         .unwrap_or(0);
 
     let size_width = cli::digit_count(max_file_size as u64);
 
+    let matches_glob = |name: &str| {
+        match &glob {
+            None => true,
+            Some(glob) => glob.matches(name),
+        }
+    };
+
     let print_directory = |name: &str| {
         if !key_matches_requested(directory_prefix, name, args) {
+            return;
+        }
+        if !matches_glob(name) {
             return;
         }
         let name = printable_filename(name, bucket, args, directory_prefix);
@@ -649,6 +669,9 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, dir
                 }
             }
             if !args.only_directories {
+                if !matches_glob(name) {
+                    continue;
+                }
                 let name = printable_filename(name, bucket, args, directory_prefix);
                 if args.long {
                     let date = file.last_modified()
