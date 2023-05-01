@@ -50,7 +50,7 @@ impl<'a> Glob<'a> {
 
         let prefix = uri::Key::new(prefix.as_os_str().to_str()?.to_string());
 
-        let has_recursive_wildcard = Self::glob_has_resursive_wildcard(key.as_str());
+        let has_recursive_wildcard = glob_has_resursive_wildcard(key.as_str());
         Some(Glob{prefix, glob, has_recursive_wildcard})
     }
     pub fn prefix(&self) -> &uri::Key {
@@ -69,22 +69,40 @@ impl<'a> Glob<'a> {
         self.has_recursive_wildcard
     }
 
-    fn glob_has_resursive_wildcard(glob_str: &str) -> bool {
-        let Some(index) = glob_str.find("**") else {
-            return false
-        };
-        // Check not escaped
-        match index {
-            0 => true,
-            // '\**' => not a recursive wildcard
-            1 => glob_str.chars().nth(0) != Some('\\'),
-            // '\**' => not a recursive wildcard
-            // '\\**' => is a recursive wildcard (prefixed by a literal backslash)
-            _ => glob_str.chars().nth(index - 2) != Some('\\') || glob_str.chars().nth(index - 1) == Some('\\'),
-        }
-    }
 }
 
 pub fn as_key_and_glob<'a>(key: &'a uri::Key, options: &Options) -> Option<Glob<'a>> {
     Glob::new(key, options)
 }
+
+fn glob_has_resursive_wildcard(glob_str: &str) -> bool {
+    let Some(index) = glob_str.find("**") else {
+        return false
+    };
+    // Check not escaped
+    match index {
+        0 => true,
+        // '\**' => not a recursive wildcard
+        1 => glob_str.chars().nth(0) != Some('\\'),
+        // '\**' => not a recursive wildcard
+        // '\\**' => is a recursive wildcard (prefixed by a literal backslash)
+        _ => glob_str.chars().nth(index - 2) == Some('\\') || glob_str.chars().nth(index - 1) != Some('\\'),
+    }
+}
+
+#[test]
+fn test_has_recusive_wildcard() {
+    assert_eq!(glob_has_resursive_wildcard("test/**"), true);
+    assert_eq!(glob_has_resursive_wildcard("test/**/*.txt"), true);
+    assert_eq!(glob_has_resursive_wildcard("test/**/*"), true);
+
+    assert_eq!(glob_has_resursive_wildcard("**"), true);
+    assert_eq!(glob_has_resursive_wildcard("\\**"), false);
+    assert_eq!(glob_has_resursive_wildcard("\\\\**"), true);
+    assert_eq!(glob_has_resursive_wildcard("test/**"), true);
+    assert_eq!(glob_has_resursive_wildcard("test/\\**"), false);
+    assert_eq!(glob_has_resursive_wildcard("test/\\\\**"), true);
+
+    assert_eq!(glob_has_resursive_wildcard("test/*"), false);
+}
+
