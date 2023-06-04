@@ -1,4 +1,4 @@
-#[derive(clap::ArgEnum, Debug, Clone)]
+#[derive(clap::ValueEnum, Debug, Clone)]
 pub enum ProgressOption {
     On,
     Off,
@@ -10,7 +10,7 @@ pub enum ProgressOption {
 pub struct ArgProgress {
     /// Display transfer progress
     #[cfg(feature = "progress")]
-    #[clap(long, short='p', arg_enum, default_value="auto")]
+    #[clap(long, short='p', value_enum, default_value="auto")]
     progress: ProgressOption,
 }
 

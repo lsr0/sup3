@@ -249,7 +249,7 @@ impl Copy {
         let invalid_args = || {
             use clap::CommandFactory;
             let _ = Arguments::command()
-                .error(clap::ErrorKind::ArgumentConflict, "cp requires either <S3 URI..> <local path> or <local path..> <S3 URI>")
+                .error(clap::error::ErrorKind::ArgumentConflict, "cp requires either <S3 URI..> <local path> or <local path..> <S3 URI>")
                 .print();
             MainResult::ErrorArguments
         };
@@ -300,7 +300,7 @@ impl MakeBuckets {
             if !uri.key.is_empty() {
                 use clap::CommandFactory;
                 let _ = Arguments::command()
-                    .error(clap::ErrorKind::InvalidValue, "make_bucket requires pure bucket arguments without a key, e.g. 's3://bucketname/'")
+                    .error(clap::error::ErrorKind::InvalidValue, "make_bucket requires pure bucket arguments without a key, e.g. 's3://bucketname/'")
                     .print();
                 return MainResult::ErrorArguments;
             }

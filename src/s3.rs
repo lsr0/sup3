@@ -129,9 +129,9 @@ pub struct ListArguments {
 }
 
 impl ListArguments {
-    pub fn validate(&self) -> Result<(), (clap::ErrorKind, &'static str)> {
+    pub fn validate(&self) -> Result<(), (clap::error::ErrorKind, &'static str)> {
         if self.glob_options.is_enabled() && self.recurse {
-            return Err((clap::ErrorKind::ArgumentConflict, "recurse with glob currently not supported"));
+            return Err((clap::error::ErrorKind::ArgumentConflict, "recurse with glob currently not supported"));
         }
         Ok(())
     }

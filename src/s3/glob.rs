@@ -2,7 +2,7 @@ use crate::s3::uri;
 
 use wax::Pattern;
 
-#[derive(clap::ArgEnum, Debug, Clone, PartialEq)]
+#[derive(clap::ValueEnum, Debug, Clone, PartialEq)]
 pub enum GlobOption {
     Auto,
     On,
@@ -12,7 +12,7 @@ pub enum GlobOption {
 #[derive(clap::Args, Debug, Clone, PartialEq)]
 pub struct Options {
     /// EXPERIMENTAL: Enable glob path specification (auto enables when glob characters found)
-    #[clap(long, short='G', arg_enum, default_value="off")]
+    #[clap(long, short='G', value_enum, default_value="off")]
     glob: GlobOption,
 }
 
