@@ -7,6 +7,7 @@ use aws_sdk_s3::{types::ByteStream, output::ListObjectsV2Output};
 use futures::stream::Stream;
 use futures::TryStreamExt;
 use tokio::io::AsyncWriteExt;
+use clap::builder::PossibleValuesParser;
 
 use crate::shared_options::SharedOptions;
 use crate::cli;
@@ -37,7 +38,7 @@ pub struct OptionsUpload {
     #[clap(long, verbatim_doc_comment, help_heading="Access Control")]
     pub canned_acl: Option<aws_sdk_s3::model::ObjectCannedAcl>,
     /// Storage Class
-    #[clap(long, possible_values=aws_sdk_s3::model::StorageClass::values())]
+    #[clap(long, value_parser=PossibleValuesParser::new(aws_sdk_s3::model::StorageClass::values()))]
     pub class: Option<aws_sdk_s3::model::StorageClass>,
 }
 
@@ -46,10 +47,10 @@ pub struct OptionsMakeBucket {
     #[clap(flatten)]
     pub access_control: OptionsAccessControl,
     /// Canned access control list
-    #[clap(long, possible_values=aws_sdk_s3::model::BucketCannedAcl::values(), help_heading="Access Control")]
+    #[clap(long, value_parser=PossibleValuesParser::new(aws_sdk_s3::model::BucketCannedAcl::values()), help_heading="Access Control")]
     pub canned_acl: Option<aws_sdk_s3::model::BucketCannedAcl>,
     /// Storage Class
-    #[clap(long, possible_values=aws_sdk_s3::model::StorageClass::values())]
+    #[clap(long, value_parser=PossibleValuesParser::new(aws_sdk_s3::model::StorageClass::values()))]
     pub class: Option<aws_sdk_s3::model::StorageClass>,
 }
 

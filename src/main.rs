@@ -110,7 +110,7 @@ struct ListBuckets {
 #[derive(Args, Debug)]
 struct Copy {
     /// Either <S3 URI..> <local path> or <local path..> <S3 URI>
-    #[clap(required = true, parse(try_from_os_str=CopyArgument::try_from))]
+    #[clap(required = true, value_parser=clap::value_parser!(std::ffi::OsString))]
     args: Vec<CopyArgument>,
 
     #[clap(flatten)]
