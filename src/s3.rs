@@ -4,11 +4,13 @@ use aws_smithy_http::body::SdkBody;
 use aws_types::region::Region;
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{primitives::ByteStream, operation::list_objects_v2::ListObjectsV2Output};
-use aws_sdk_s3::operation::{put_object::PutObjectError, get_object::GetObjectError};
+use aws_sdk_s3::operation::get_object::GetObjectError;
 use futures::stream::Stream;
 use futures::TryStreamExt;
 use tokio::io::AsyncWriteExt;
 use clap::builder::PossibleValuesParser;
+use std::fmt::Debug;
+use aws_sdk_s3::error::ProvideErrorMetadata;
 
 use crate::shared_options::SharedOptions;
 use crate::cli;
@@ -138,12 +140,20 @@ impl ListArguments {
     }
 }
 
+fn error_source<'a>(error: &'a dyn std::error::Error) -> &'a dyn std::error::Error {
+    let mut source = error;
+    for _ in 0..1 {
+        if let Some(s) = source.source() {
+            source = s;
+        } else {
+            break;
+        }
+    }
+    return source;
+}
+
 #[derive (thiserror::Error, Debug)]
 pub enum Error {
-    #[error("S3 put error: {0}")]
-    Put(#[from] PutObjectError),
-    #[error("S3 get error: {0}")]
-    Get(#[from] GetObjectError),
     #[error("no filename in either source or destination")]
     NoFilename,
     #[error("specified local filename not unicode")]
@@ -156,27 +166,35 @@ pub enum Error {
     NoSuchKey(Uri),
     #[error("io: {0}")]
     Io(std::io::Error),
-    #[error("{0}: {1}")]
+    #[error("{0}{}", error_source(&**.1))]
     S3SdkError(&'static str, Box<dyn std::error::Error + Send + Sync + 'static>),
-    #[error("{0}: {1:?}")]
+    #[error("{0}{:?}", error_source(&**.1))]
     S3SdkErrorDebug(&'static str, Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error("{}: {}", .0.code().unwrap(), .0.message().unwrap())]
+    S3SdkErrorMeta(aws_smithy_types::error::ErrorMetadata),
 }
 
-impl<E: std::error::Error + Send + Sync + 'static> From<aws_smithy_http::result::SdkError<E>> for Error {
-    fn from(err: aws_smithy_http::result::SdkError<E>) -> Self {
+impl<E: std::error::Error + Send + Sync + 'static + ProvideErrorMetadata, R> From<aws_smithy_http::result::SdkError<E, R>> for Error {
+    fn from(err: aws_smithy_http::result::SdkError<E, R>) -> Self {
         use aws_smithy_http::result::SdkError;
         let (prefix, print_debug) = match err {
-            SdkError::ConstructionFailure(_) => ("S3 request construction failure", true),
-            SdkError::TimeoutError(_) => ("S3 timeout", true),
-            SdkError::ResponseError(_) => ("S3 response error", true),
-            SdkError::DispatchFailure(_) => ("S3 dispatch failure", true),
-            SdkError::ServiceError(_) => ("S3 service error", false),
-            _ => ("S3 other error", true),
+            SdkError::ConstructionFailure(_) => ("S3 request construction failure: ", true),
+            SdkError::TimeoutError(_) => ("S3 timeout: ", true),
+            SdkError::ResponseError(_) => ("S3 response error: ", true),
+            SdkError::DispatchFailure(_) => ("", false),
+            SdkError::ServiceError(_) => ("", false),
+            _ => ("S3 other error: ", true),
         };
-        match (err.into_source(), print_debug) {
-            (Ok(source), false) => Error::S3SdkError(prefix, source),
-            (Ok(source), true) => Error::S3SdkErrorDebug(prefix, source),
-            (Err(orig), _) => orig.into(),
+        if err.meta().code().is_some() && err.meta().message().is_some() {
+            return Error::S3SdkErrorMeta(err.meta().clone())
+        }
+        let source = match err.into_source() {
+            Ok(s) => s,
+            Err(orig) => return orig.into(),
+        };
+        match print_debug {
+            false => Error::S3SdkError(prefix, source),
+            true => Error::S3SdkErrorDebug(prefix, source),
         }
     }
 }
@@ -562,10 +580,9 @@ impl Client {
 }
 
 fn error_from_get(uri: &Uri, sdk: aws_sdk_s3::error::SdkError<GetObjectError>) -> Error {
-    use aws_sdk_s3::error::*;
-    match sdk.into_service_error() {
-        GetObjectError::NoSuchKey(_) => Error::NoSuchKey(uri.clone()),
-        err @ _ => Error::Get(err),
+    match sdk {
+        aws_sdk_s3::error::SdkError::ServiceError(_) => Error::NoSuchKey(uri.clone()),
+        _ => sdk.into(),
     }
 }
 
