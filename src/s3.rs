@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use aws_smithy_http::body::SdkBody;
 use aws_types::region::Region;
 use aws_config::meta::region::RegionProviderChain;
-use aws_sdk_s3::{types::ByteStream, output::ListObjectsV2Output};
+use aws_sdk_s3::{primitives::ByteStream, operation::list_objects_v2::ListObjectsV2Output};
+use aws_sdk_s3::operation::{put_object::PutObjectError, get_object::GetObjectError};
 use futures::stream::Stream;
 use futures::TryStreamExt;
 use tokio::io::AsyncWriteExt;
@@ -36,10 +37,10 @@ pub struct OptionsUpload {
     ///   authenticated-read, bucket-owner-read,
     ///   bucket-owner-full-control
     #[clap(long, verbatim_doc_comment, help_heading="Access Control")]
-    pub canned_acl: Option<aws_sdk_s3::model::ObjectCannedAcl>,
+    pub canned_acl: Option<aws_sdk_s3::types::ObjectCannedAcl>,
     /// Storage Class
-    #[clap(long, value_parser=PossibleValuesParser::new(aws_sdk_s3::model::StorageClass::values()))]
-    pub class: Option<aws_sdk_s3::model::StorageClass>,
+    #[clap(long, value_parser=PossibleValuesParser::new(aws_sdk_s3::types::StorageClass::values()))]
+    pub class: Option<aws_sdk_s3::types::StorageClass>,
 }
 
 #[derive(clap::Args, Debug, Clone)]
@@ -47,11 +48,11 @@ pub struct OptionsMakeBucket {
     #[clap(flatten)]
     pub access_control: OptionsAccessControl,
     /// Canned access control list
-    #[clap(long, value_parser=PossibleValuesParser::new(aws_sdk_s3::model::BucketCannedAcl::values()), help_heading="Access Control")]
-    pub canned_acl: Option<aws_sdk_s3::model::BucketCannedAcl>,
+    #[clap(long, value_parser=PossibleValuesParser::new(aws_sdk_s3::types::BucketCannedAcl::values()), help_heading="Access Control")]
+    pub canned_acl: Option<aws_sdk_s3::types::BucketCannedAcl>,
     /// Storage Class
-    #[clap(long, value_parser=PossibleValuesParser::new(aws_sdk_s3::model::StorageClass::values()))]
-    pub class: Option<aws_sdk_s3::model::StorageClass>,
+    #[clap(long, value_parser=PossibleValuesParser::new(aws_sdk_s3::types::StorageClass::values()))]
+    pub class: Option<aws_sdk_s3::types::StorageClass>,
 }
 
 #[derive(clap::Args, Debug, Clone)]
@@ -140,9 +141,9 @@ impl ListArguments {
 #[derive (thiserror::Error, Debug)]
 pub enum Error {
     #[error("S3 put error: {0}")]
-    Put(#[from] aws_sdk_s3::error::PutObjectError),
+    Put(#[from] PutObjectError),
     #[error("S3 get error: {0}")]
-    Get(#[from] aws_sdk_s3::error::GetObjectError),
+    Get(#[from] GetObjectError),
     #[error("no filename in either source or destination")]
     NoFilename,
     #[error("specified local filename not unicode")]
@@ -542,7 +543,7 @@ impl Client {
     pub async fn make_bucket(&self, uri: &Uri, options: &OptionsMakeBucket) -> Result<(), Error> {
         let location_constraint = self.region.as_ref()
             .map(|r| r.as_ref().parse().expect("infallible"));
-        let create_config = aws_sdk_s3::model::CreateBucketConfiguration::builder()
+        let create_config = aws_sdk_s3::types::CreateBucketConfiguration::builder()
             .set_location_constraint(location_constraint)
             .build();
 
@@ -560,10 +561,10 @@ impl Client {
     }
 }
 
-fn error_from_get(uri: &Uri, sdk: aws_sdk_s3::types::SdkError<aws_sdk_s3::error::GetObjectError>) -> Error {
+fn error_from_get(uri: &Uri, sdk: aws_sdk_s3::error::SdkError<GetObjectError>) -> Error {
     use aws_sdk_s3::error::*;
     match sdk.into_service_error() {
-        GetObjectError{kind: GetObjectErrorKind::NoSuchKey(_), ..} => Error::NoSuchKey(uri.clone()),
+        GetObjectError::NoSuchKey(_) => Error::NoSuchKey(uri.clone()),
         err @ _ => Error::Get(err),
     }
 }
@@ -621,8 +622,8 @@ fn is_requested_path_directory(response: &ListObjectsV2Output, requested_path: &
 const fn storage_class_field_len() -> usize {
     let mut i = 0;
     let mut max_field_len = 0;
-    while i < aws_sdk_s3::model::StorageClass::values().len() {
-        let field_len = aws_sdk_s3::model::StorageClass::values()[i].len();
+    while i < aws_sdk_s3::types::StorageClass::values().len() {
+        let field_len = aws_sdk_s3::types::StorageClass::values()[i].len();
         if field_len > max_field_len { max_field_len = field_len }
         i += 1
     }
@@ -687,7 +688,7 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, dir
                     let date = file.last_modified()
                         .and_then(|d| d.fmt(aws_smithy_types::date_time::Format::DateTime).ok())
                         .unwrap_or_else(|| "".to_owned());
-                    let storage_class = file.storage_class().unwrap_or(&aws_sdk_s3::model::ObjectStorageClass::Standard);
+                    let storage_class = file.storage_class().unwrap_or(&aws_sdk_s3::types::ObjectStorageClass::Standard);
                     println!("{:size_width$} {date:DATE_LEN$} {storage_class:storage_class_len$} {name}", file.size(), storage_class = storage_class.as_str(), storage_class_len = STORAGE_CLASS_FIELD_LEN);
                 } else {
                     println!("{name}");
