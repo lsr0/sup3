@@ -14,6 +14,7 @@ categories = ["command-line-utilities", "filesystem"]
 [features]
 default = ["progress"]
 progress = ["dep:indicatif", "dep:console"]
+gen-completion = ["clap_complete"]
 
 [dependencies]
 aws-config = "0.56"
@@ -22,7 +23,8 @@ aws-types = "0.56"
 aws-smithy-types = "0.56"
 aws-smithy-http = "0.56"
 tokio = { "version" = "1", features = ["full"] }
-clap = { "version" = "3.2", features = ["std", "color", "suggestions", "derive", "cargo", "unicode"] }
+clap = { "version" = "4.4", features = ["std", "color", "suggestions", "derive", "cargo", "unicode"] }
+clap_complete = { version = "4.4", optional = true }
 url = "2"
 thiserror = "1"
 futures = "0.3"
