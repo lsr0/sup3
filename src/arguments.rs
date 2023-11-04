@@ -115,10 +115,12 @@ pub(crate) struct Download {
 pub(crate) struct ListBuckets {
 }
 
+use clap::builder::TypedValueParser;
+
 #[derive(Args, Debug)]
 pub(crate) struct Copy {
     /// Either <S3 URI..> <local path> or <local path..> <S3 URI>
-    #[clap(required = true, value_parser=clap::value_parser!(std::ffi::OsString), value_hint=clap::ValueHint::AnyPath)]
+    #[clap(required = true, value_parser=clap::builder::OsStringValueParser::new().try_map(CopyArgument::try_from), value_hint=clap::ValueHint::AnyPath)]
     args: Vec<CopyArgument>,
 
     #[clap(flatten)]
@@ -256,6 +258,12 @@ impl TryFrom<&std::ffi::OsStr> for CopyArgument {
             }
         }
         Ok(CopyArgument::LocalFile(std::path::PathBuf::from(arg)))
+    }
+}
+impl TryFrom<std::ffi::OsString> for CopyArgument {
+    type Error = String;
+    fn try_from(arg: std::ffi::OsString) -> Result<Self, String> {
+        Self::try_from(arg.as_os_str())
     }
 }
 
