@@ -466,7 +466,7 @@ impl Client {
             .set_continuation_token(continuation)
             .send()
             .await
-            .map_err(|e| dbg!(e).into())
+            .map_err(|e| e.into())
     }
     pub async fn ls(&self, opts: &SharedOptions, args: &ListArguments, s3_uri: &Uri) -> Result<(), Error> {
         if opts.verbose {
