@@ -315,8 +315,8 @@ fn path_to_sdk_body(path: PathBuf, progress: cli::ProgressFn) -> SdkBody
     };
     let flattened = open_fut.try_flatten_stream();
     let inspected = flattened.inspect_ok(move |bytes| progress(cli::Update::StateProgress(bytes.len())));
-    let hyper_body = hyper::body::Body::wrap_stream(inspected);
-    SdkBody::from_body_0_4(hyper_body)
+    let body = http_body_util::StreamBody::new(inspected.map_ok(hyper::body::Frame::data));
+    SdkBody::from_body_1_x(body)
 }
 
 fn path_to_bytestream(path: PathBuf, progress: cli::ProgressFn) -> ByteStream
