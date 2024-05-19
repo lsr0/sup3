@@ -54,9 +54,9 @@ jobs:
           args: ${{ env.cargo_args }}
 
       - name: 'Integrated Tests'
-        if: ${{ ! env.cross_arch }}
+        if: ${{ ! env.cross_arch && startsWith(env.os, 'ubuntu') }}
         run: |
-          test/run-tests-container.sh target${{ env.target_path_component }}/sup3*
+          CONTAINER_RUNTIME=docker test/run-tests-container.sh target${{ env.target_path_component }}/sup3*
 
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
