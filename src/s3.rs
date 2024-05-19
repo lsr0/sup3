@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use aws_smithy_http::body::SdkBody;
+use aws_sdk_s3::primitives::SdkBody;
 use aws_types::region::Region;
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{primitives::ByteStream, operation::list_objects_v2::ListObjectsV2Output};
@@ -90,19 +90,24 @@ pub async fn init(region: Option<String>, endpoint: Option<http::uri::Uri>, prof
         None => RegionProviderChain::first_try(region_provider).or_else("eu-west-1"),
     };
 
-    let mut builder = aws_config::from_env()
+    let shared_config = aws_config::defaults(aws_config::BehaviorVersion::v2024_03_28())
         .region(region_provider)
-        .credentials_provider(credentials_provider.await);
+        .credentials_provider(credentials_provider.await)
+        .load()
+        .await;
+
+    let mut client_config_builder = aws_sdk_s3::config::Builder::from(&shared_config);
 
     if let Some(uri) = endpoint {
-        builder = builder.endpoint_url(uri.to_string());
+        client_config_builder = client_config_builder
+            .endpoint_url(uri.to_string())
+            .force_path_style(true);
     }
 
-    let config = builder.load().await;
-    let client = aws_sdk_s3::Client::new(&config);
+    let client = aws_sdk_s3::Client::from_conf(client_config_builder.build());
     Client {
         client,
-        region: config.region().cloned(),
+        region: shared_config.region().cloned(),
     }
 }
 
@@ -161,7 +166,7 @@ pub enum Error {
     #[error("local file: {0}")]
     LocalFile(#[from] std::io::Error),
     #[error("streaming: {0}")]
-    Streaming(#[from] aws_smithy_http::byte_stream::error::Error),
+    Streaming(#[from] aws_sdk_s3::primitives::ByteStreamError),
     #[error("no such remote file: {0}")]
     NoSuchKey(Uri),
     #[error("io: {0}")]
@@ -174,9 +179,9 @@ pub enum Error {
     S3SdkErrorMeta(aws_smithy_types::error::ErrorMetadata),
 }
 
-impl<E: std::error::Error + Send + Sync + 'static + ProvideErrorMetadata, R> From<aws_smithy_http::result::SdkError<E, R>> for Error {
-    fn from(err: aws_smithy_http::result::SdkError<E, R>) -> Self {
-        use aws_smithy_http::result::SdkError;
+impl<E: std::error::Error + Send + Sync + 'static + ProvideErrorMetadata, R> From<aws_sdk_s3::error::SdkError<E, R>> for Error {
+    fn from(err: aws_sdk_s3::error::SdkError<E, R>) -> Self {
+        use aws_sdk_s3::error::SdkError;
         let (prefix, print_debug) = match err {
             SdkError::ConstructionFailure(_) => ("S3 request construction failure: ", true),
             SdkError::TimeoutError(_) => ("S3 timeout: ", true),
@@ -244,7 +249,7 @@ impl Target {
     }
 }
 
-async fn get_write_loop(local_file: &mut partial_file::PartialFile, mut body: aws_smithy_http::byte_stream::ByteStream, progress_fn: &cli::ProgressFn) -> Result<(), Error> {
+async fn get_write_loop(local_file: &mut partial_file::PartialFile, mut body: aws_sdk_s3::primitives::ByteStream, progress_fn: &cli::ProgressFn) -> Result<(), Error> {
     loop {
         let next_block = body.try_next();
         match next_block.await {
@@ -311,7 +316,7 @@ fn path_to_sdk_body(path: PathBuf, progress: cli::ProgressFn) -> SdkBody
     let flattened = open_fut.try_flatten_stream();
     let inspected = flattened.inspect_ok(move |bytes| progress(cli::Update::StateProgress(bytes.len())));
     let hyper_body = hyper::body::Body::wrap_stream(inspected);
-    SdkBody::from(hyper_body)
+    SdkBody::from_body_0_4(hyper_body)
 }
 
 fn path_to_bytestream(path: PathBuf, progress: cli::ProgressFn) -> ByteStream
@@ -394,9 +399,9 @@ impl Client {
         let mut local_file = partial_file::PartialFile::new(local_path).await?;
 
         progress_fn(cli::Update::State("downloading"));
-        progress_fn(cli::Update::StateLength(response.content_length() as usize));
+        progress_fn(cli::Update::StateLength(response.content_length().unwrap_or(0i64) as usize));
         if verbose {
-            println!("🏁 downloading '{from}' [{size} bytes] to {path_printable}", size = response.content_length(), path_printable = local_file.path_printable());
+            println!("🏁 downloading '{from}' [{size} bytes] to {path_printable}", size = response.content_length().unwrap_or(0i64), path_printable = local_file.path_printable());
         }
         let local_path = match get_write_loop(&mut local_file, response.body, &progress_fn).await {
             Ok(_) => local_file.finished().await?,
@@ -461,7 +466,7 @@ impl Client {
             .set_continuation_token(continuation)
             .send()
             .await
-            .map_err(|e| e.into())
+            .map_err(|e| dbg!(e).into())
     }
     pub async fn ls(&self, opts: &SharedOptions, args: &ListArguments, s3_uri: &Uri) -> Result<(), Error> {
         if opts.verbose {
@@ -659,7 +664,7 @@ fn printable_filename<'a>(key: &'a str, bucket: &str, args: &ListArguments, dire
 
 fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, directory_prefix: &Key, bucket: &str, seen_directories: &mut seen_directories::SeenDirectories, glob: Option<&glob::Glob>) {
     let max_file_size = response.contents.as_ref()
-        .and_then(|c| c.iter().map(|file| file.size()).max())
+        .and_then(|c| c.iter().map(|file| file.size().unwrap_or(0)).max())
         .unwrap_or(0);
 
     let size_width = cli::digit_count(max_file_size as u64);
@@ -677,14 +682,14 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, dir
     };
 
     if !args.only_files {
-        for dir in response.common_prefixes().unwrap_or_default() {
+        for dir in response.common_prefixes() {
             if let Some(name) = &dir.prefix {
                 print_directory(name);
             }
         }
     }
 
-    for file in response.contents().unwrap_or_default() {
+    for file in response.contents() {
         if let Some(name) = &file.key {
             if !key_matches_requested(directory_prefix, name, args, glob) {
                 continue;
@@ -706,7 +711,7 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, dir
                         .and_then(|d| d.fmt(aws_smithy_types::date_time::Format::DateTime).ok())
                         .unwrap_or_else(|| "".to_owned());
                     let storage_class = file.storage_class().unwrap_or(&aws_sdk_s3::types::ObjectStorageClass::Standard);
-                    println!("{:size_width$} {date:DATE_LEN$} {storage_class:storage_class_len$} {name}", file.size(), storage_class = storage_class.as_str(), storage_class_len = STORAGE_CLASS_FIELD_LEN);
+                    println!("{:size_width$} {date:DATE_LEN$} {storage_class:storage_class_len$} {name}", file.size().unwrap_or(0), storage_class = storage_class.as_str(), storage_class_len = STORAGE_CLASS_FIELD_LEN);
                 } else {
                     println!("{name}");
                 }
