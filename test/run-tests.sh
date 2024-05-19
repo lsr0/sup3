@@ -17,8 +17,8 @@ bucket=s3://test
 $sup3 mb $bucket
 $sup3 cp -r $d/* $bucket
 
-res_unix=$(cd $d && find dir)
-res_sup3=$($sup3 ls -r $bucket)
+res_unix=$(cd $d && find dir | sort)
+res_sup3=$($sup3 ls -r $bucket | sort)
 
 if [ "$res_unix" != "$res_sup3" ];then
    echo "Output mismatch:" >&2
