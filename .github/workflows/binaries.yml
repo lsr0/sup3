@@ -27,6 +27,10 @@ jobs:
             cross_arch: aarch64
             build_suffix: -musl
     runs-on: ${{ matrix.os }}
+    env:
+      cargo_args: --profile release-small ${{ contains(matrix.os, 'windows') && '--target-dir=./target' || '' }} ${{ matrix.cross_arch_long && format('--target {0}', matrix.cross_arch_long) || '' }}
+      target_path_component: ${{ matrix.cross_arch_long && format('/{0}', matrix.cross_arch_long) || '' }}
+      target_path: target${{ env.target_path_component }}/release-small
     steps:
       - name: 'Checkout'
         uses: actions/checkout@v3
@@ -41,15 +45,25 @@ jobs:
         with:
           use-cross: ${{ matrix.cross_arch_long != '' && !contains(matrix.cross_arch_long, 'apple') }}
           command: build
-          args: --profile release-small ${{ contains(matrix.os, 'windows') && '--target-dir=./target' || '' }} ${{ matrix.cross_arch_long && format('--target {0}', matrix.cross_arch_long) || '' }}
+          args: ${{ env.cargo_args }}
+
+      - name: 'Unit Tests'
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: ${{ matrix.cross_arch_long != '' && !contains(matrix.cross_arch_long, 'apple') }}
+          command: test
+          args: ${{ env.cargo_args }}
+
+      - name: 'Integrated Tests'
+        if: ${{ ! env.cross_arch }}
+        run: |
+          test/run-tests-container.sh $target_path/sup3*
 
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
-        env:
-          target_path_component: ${{ matrix.cross_arch_long && format('/{0}', matrix.cross_arch_long) || '' }}
         with:
           name: sup3-${{ runner.os }}-${{ matrix.cross_arch || runner.arch }}${{ matrix.build_suffix}}
-          path: target${{ env.target_path_component }}/release-small/sup3*
+          path: ${{ env.target_path }}/sup3*
           if-no-files-found: error
 
   release:
