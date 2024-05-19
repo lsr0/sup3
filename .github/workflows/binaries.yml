@@ -56,7 +56,7 @@ jobs:
       - name: 'Integrated Tests'
         if: ${{ ! matrix.cross_arch && startsWith(matrix.os, 'ubuntu') }}
         run: |
-          CONTAINER_RUNTIME=docker test/run-tests-container.sh target${{ env.target_path_component }}/sup3*
+          CONTAINER_RUNTIME=docker test/run-tests-container.sh target${{ env.target_path_component }}/release-small/sup3*
 
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
