@@ -30,7 +30,6 @@ jobs:
     env:
       cargo_args: --profile release-small ${{ contains(matrix.os, 'windows') && '--target-dir=./target' || '' }} ${{ matrix.cross_arch_long && format('--target {0}', matrix.cross_arch_long) || '' }}
       target_path_component: ${{ matrix.cross_arch_long && format('/{0}', matrix.cross_arch_long) || '' }}
-      target_path: target${{ env.target_path_component }}/release-small
     steps:
       - name: 'Checkout'
         uses: actions/checkout@v3
@@ -57,13 +56,13 @@ jobs:
       - name: 'Integrated Tests'
         if: ${{ ! env.cross_arch }}
         run: |
-          test/run-tests-container.sh $target_path/sup3*
+          test/run-tests-container.sh target${{ env.target_path_component }}/sup3*
 
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
         with:
           name: sup3-${{ runner.os }}-${{ matrix.cross_arch || runner.arch }}${{ matrix.build_suffix}}
-          path: ${{ env.target_path }}/sup3*
+          path: target${{ env.target_path_component }}/release-small/sup3*
           if-no-files-found: error
 
   release:
