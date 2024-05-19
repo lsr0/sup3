@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use aws_sdk_s3::primitives::SdkBody;
-use aws_types::region::Region;
+use aws_sdk_s3::config::Region;
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{primitives::ByteStream, operation::list_objects_v2::ListObjectsV2Output};
 use aws_sdk_s3::operation::get_object::GetObjectError;
@@ -176,7 +176,7 @@ pub enum Error {
     #[error("{0}{:?}", error_source(&**.1))]
     S3SdkErrorDebug(&'static str, Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error("{}: {}", .0.code().unwrap(), .0.message().unwrap())]
-    S3SdkErrorMeta(aws_smithy_types::error::ErrorMetadata),
+    S3SdkErrorMeta(aws_sdk_s3::error::ErrorMetadata),
 }
 
 impl<E: std::error::Error + Send + Sync + 'static + ProvideErrorMetadata, R> From<aws_sdk_s3::error::SdkError<E, R>> for Error {
@@ -708,7 +708,7 @@ fn ls_consume_response(args: &ListArguments, response: &ListObjectsV2Output, dir
                 let name = printable_filename(name, bucket, args, directory_prefix);
                 if args.long {
                     let date = file.last_modified()
-                        .and_then(|d| d.fmt(aws_smithy_types::date_time::Format::DateTime).ok())
+                        .and_then(|d| d.fmt(aws_sdk_s3::primitives::DateTimeFormat::DateTime).ok())
                         .unwrap_or_else(|| "".to_owned());
                     let storage_class = file.storage_class().unwrap_or(&aws_sdk_s3::types::ObjectStorageClass::Standard);
                     println!("{:size_width$} {date:DATE_LEN$} {storage_class:storage_class_len$} {name}", file.size().unwrap_or(0), storage_class = storage_class.as_str(), storage_class_len = STORAGE_CLASS_FIELD_LEN);

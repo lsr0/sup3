@@ -19,9 +19,6 @@ gen-completion = ["clap_complete"]
 [dependencies]
 aws-config = "1.4"
 aws-sdk-s3 = "1.29"
-aws-types = "1.2"
-aws-smithy-types = "1.1"
-aws-smithy-http = "0.60"
 tokio = { "version" = "1", features = ["full"] }
 clap = { "version" = "4.4", features = ["std", "color", "suggestions", "derive", "cargo", "unicode"] }
 clap_complete = { version = "4.4", optional = true }
