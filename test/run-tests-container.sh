@@ -7,16 +7,16 @@ secret_key=SKEXAMPLES3S
 container_runtime=${CONTAINER_RUNTIME:-podman}
 
 echo "sup3-test: running container"
-$container_runtime run \
+container_id=$($container_runtime run -d \
    -p 9000:9000 \
    -e "MINIO_ROOT_USER=$access_key" \
    -e "MINIO_ROOT_PASSWORD=$secret_key" \
-   quay.io/minio/minio server /data --console-address ":9090" &
+   quay.io/minio/minio server /data --console-address ":9090")
 
 function cleanup
 {
    echo "sup3-test: killing container"
-   kill %%
+   $container_runtime kill $container_id
 }
 trap cleanup EXIT
 
