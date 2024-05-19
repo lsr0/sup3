@@ -54,7 +54,7 @@ jobs:
           args: ${{ env.cargo_args }}
 
       - name: 'Integrated Tests'
-        if: ${{ ! env.cross_arch && startsWith(env.os, 'ubuntu') }}
+        if: ${{ ! matrix.cross_arch && startsWith(matrix.os, 'ubuntu') }}
         run: |
           CONTAINER_RUNTIME=docker test/run-tests-container.sh target${{ env.target_path_component }}/sup3*
 
