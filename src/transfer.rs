@@ -191,7 +191,10 @@ async fn download_recursive_one(uri: s3::Uri, target: s3::Target, recursive: boo
                 for entry in page {
                     match entry {
                         s3::RecursiveStreamItem::Directory(key) => {
-                            let additional_dir: &str = &key[uri.key.len()+1..];
+                            let mut additional_dir: &str = &key[uri.key.len()..];
+                            if let Some(path) = additional_dir.strip_prefix('/') {
+                                additional_dir = path;
+                            }
                             if additional_dir.len() > 0 {
                                 let path: std::path::PathBuf = [target.path(), additional_dir.into()].iter().collect();
                                 use std::io::ErrorKind::AlreadyExists;
@@ -208,7 +211,10 @@ async fn download_recursive_one(uri: s3::Uri, target: s3::Target, recursive: boo
                             }
                         },
                         s3::RecursiveStreamItem::File(key) => {
-                            let additional_path: &str = &key[uri.key.len()+1..];
+                            let mut additional_path: &str = &key[uri.key.len()..];
+                            if let Some(path) = additional_path.strip_prefix('/') {
+                                additional_path = path;
+                            }
                             let additional_dir = additional_path.rsplit_once('/').map(|(dir, _filename)| dir);
                             let target = match additional_dir {
                                 Some(dir) => target.child(dir),
