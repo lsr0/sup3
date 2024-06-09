@@ -1,6 +1,6 @@
 [package]
 name = "sup3"
-version = "0.8.17"
+version = "0.9.0"
 edition = "2021"
 authors = ["Lindsay Roberts <os@lindsayr.com>"]
 license = "MIT"

@@ -7,9 +7,9 @@
 ![Recording of download with progress enabled](https://github.com/lsr0/sup3/blob/master/images/download_progress_anim_0.8.5.gif?raw=true)
 
 ## Warning
-This is **alpha**
+This is **beta**
 
-Anything and everything could go wrong. The [Rust AWS SDK](https://github.com/awslabs/aws-sdk-rust) used is also in developer preview.
+Testing is not near exhaustive, bug reports and pull requests welcome.
 
 ## Usage goal
 * CI and other minimal environments where pulling in python or building dependencies might be undesirable
