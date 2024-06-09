@@ -47,6 +47,7 @@ jobs:
           args: ${{ env.cargo_args }}
 
       - name: 'Unit Tests'
+        if: ${{ matrix.cross_arch_long == '' || !contains(matrix.cross_arch_long, 'apple') }}
         uses: actions-rs/cargo@v1
         with:
           use-cross: ${{ matrix.cross_arch_long != '' && !contains(matrix.cross_arch_long, 'apple') }}
