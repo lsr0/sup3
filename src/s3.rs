@@ -377,6 +377,10 @@ impl Client {
                 let recursive_stream = self.get_recursive_list_stream(&uri, progress_fn).await?;
                 Ok(GetRecursiveResultStream::Many(recursive_stream))
             },
+            Err(Error::NoFilename) if recursive => {
+                let recursive_stream = self.get_recursive_list_stream(&from, progress_fn).await?;
+                Ok(GetRecursiveResultStream::Many(recursive_stream))
+            },
             Ok(path) => Ok(GetRecursiveResultStream::One(path)),
             Err(err) => Err(err),
         }
