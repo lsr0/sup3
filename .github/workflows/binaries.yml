@@ -60,7 +60,7 @@ jobs:
           CONTAINER_RUNTIME=docker test/run-tests-container.sh target${{ env.target_path_component }}/release-small/sup3*
 
       - name: 'Upload Artifact'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: sup3-${{ runner.os }}-${{ matrix.cross_arch || runner.arch }}${{ matrix.build_suffix}}
           path: target${{ env.target_path_component }}/release-small/sup3*
@@ -71,7 +71,7 @@ jobs:
     needs: [platforms]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           path: job_artifacts
 
